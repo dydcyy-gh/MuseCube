@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) 2024, sakumisu
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef BOOTUF2_CONFIG_H
+#define BOOTUF2_CONFIG_H
+
+#define CONFIG_BOOTUF2_CACHE_SIZE         4096
+#define CONFIG_BOOTUF2_SECTOR_SIZE        512
+#define CONFIG_BOOTUF2_SECTOR_PER_CLUSTER 2
+#define CONFIG_BOOTUF2_SECTOR_RESERVED    1
+#define CONFIG_BOOTUF2_NUM_OF_FAT         2
+#define CONFIG_BOOTUF2_ROOT_ENTRIES       64
+
+#define CONFIG_BOOTUF2_FAMILYID      0x57755a57
+#define CONFIG_BOOTUF2_FLASHMAX      0x100000
+#define CONFIG_BOOTUF2_PAGE_COUNTMAX 1024
+
+#endif
