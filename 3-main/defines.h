@@ -5,7 +5,7 @@
 
 //BASIC_task
 #define BASIC_PRIO         3
-#define BASIC_STACK_SIZE   128
+#define BASIC_STACK_SIZE   512
 
 //LCD lvgl task
 #define LVGL_PRIO         2
@@ -126,5 +126,8 @@
 #define LCD_USER_DISP (1 << 1)
 #define LCD_USER_VDEO (1 << 2)
 #define LCD_USER_GAME (1 << 3)
+
+//global error bumber
+#define NO_ERROR 0
 
 #endif

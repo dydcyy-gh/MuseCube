@@ -1,12 +1,15 @@
-#include "stm32f4xx.h" 
+#include "stm32f4xx.h"
 #include "lv_port_disp.h"
 #include "variables.h"
+#include "defines.h"
 #include "file_unit.h"
 #include "ff.h"
 #include <string.h>
 #include <stdio.h>
 #include "fatfs.h"
 #include "page_manager.h"
+#include "task_manager.h"
+#include "malloc.h"
 
 extern const lv_img_dsc_t file_exit_icon;
 extern const lv_img_dsc_t file_file_icon;
@@ -29,22 +32,15 @@ static void Update_File(void);
  */
 static void path_go_back(void)
 {
-    // 如果已经在最顶层驱动器目录，直接返回
     if (strcmp(current_path, "") == 0 || strcmp(current_path, "/") == 0) {
         strcpy(current_path, "");
         return;
     }
 
-    char * last_slash = strrchr(current_path, '/');
+    char *last_slash = strrchr(current_path, '/');
     if (last_slash != NULL) {
-        if (last_slash == current_path + 2 && current_path[1] == ':') { 
-            // 形如 "0:/xxx"，退回 "0:"
-            *last_slash = '\0';
-        } else {
-            *last_slash = '\0'; // 截断最后一个 '/'
-        }
+        *last_slash = '\0';
     } else {
-        // 如果连斜杠都没有了（比如 "0:"），说明要退到多盘符选择界面
         strcpy(current_path, "");
     }
 }
@@ -54,24 +50,18 @@ static void path_go_back(void)
  */
 static void folder_click_event_cb(lv_event_t * e)
 {
-    const char * folder_name = (const char *)lv_event_get_user_data(e);
-    
-    // 如果当前是在最顶层（无路径），直接拼接盘符名加冒号（视FatFs读出的盘符格式而定，通常读出"0"需补":"）
+    const char *folder_name = (const char *)lv_event_get_user_data(e);
+
     if (strcmp(current_path, "") == 0) {
-        // 如果FatFs读出的是"0"，我们需要拼成"0:"；如果是带冒号的直接拼
         strcpy(current_path, folder_name);
-        if (strchr(current_path, ':') == NULL) {
+        if (strchr(current_path, ':') == NULL)
             strcat(current_path, ":");
-        }
     } else {
-        // 正常目录拼接
-        if (current_path[strlen(current_path) - 1] != '/') {
+        if (current_path[strlen(current_path) - 1] != '/')
             strcat(current_path, "/");
-        }
         strcat(current_path, folder_name);
     }
-    
-    // 更新显示
+
     Update_File();
 }
 
@@ -83,10 +73,12 @@ static void file_click_event_cb(lv_event_t * e)
     const char * file_name = (const char *)lv_event_get_user_data(e);
     if (file_name == NULL) return;
 
-    // 清空上次的选择
-    memset(chosen_file_path, 0, sizeof(chosen_file_path));
+    // 确保缓冲区已分配
+    if (!chosen_file_path) chosen_file_path = malloc_bsc(256);
+    if (!chosen_file_path) return;
+    chosen_file_path[0] = '\0';
 
-    // 复制当前目录路
+    // 复制当前目录路径
     strcpy(chosen_file_path, current_path);
 
     size_t len = strlen(chosen_file_path);
@@ -98,7 +90,7 @@ static void file_click_event_cb(lv_event_t * e)
     }
 
     // 拼接文件名（防溢出检查）
-    if (strlen(chosen_file_path) + strlen(file_name) + 1 < sizeof(chosen_file_path)) {
+    if (strlen(chosen_file_path) + strlen(file_name) + 1 < 256) {
         strcat(chosen_file_path, file_name);
     }
 
@@ -146,114 +138,138 @@ static void load_file_list(void)
     // 清空现有的文件列表
     lv_obj_clean(file_list_cont);
     
-    int y_ofs = 0; // 行偏移，每行20pix
+    int y_ofs = 0;
 
-    // ===== 核心修复：如果是最顶层（无路径），则手动探测并列出盘符 =====
-    if (strcmp(current_path, "") == 0) {
-        for (int i = 0; i < 4; i++) { // 一般嵌入式系统挂载的盘符不会超过 4 个 (0~3)
+    // ===== 最顶层状态：展示所有盘符的详细信息（类似 Windows 此电脑） =====
+    if (strcmp(current_path, "") == 0) 
+	{
+        // 遍历0: (SD卡), 1: (U盘1), 2: (U盘2)
+        for (int i = 0; i < 3; i++) {
             char drive_path[8];
             sprintf(drive_path, "%d:", i);
             
-            DIR dir;
-            // 尝试打开该盘符，如果返回 FR_OK 说明该盘存在且文件系统正常
-            if (f_opendir(&dir, drive_path) == FR_OK) {
-                f_closedir(&dir);
+            DWORD fre_clust, fre_sect, tot_sect;
+            FATFS *fs;
+            
+            // 查询磁盘空闲信息，返回 FR_OK 说明挂载正常
+            if (f_getfree(drive_path, &fre_clust, &fs) == FR_OK) {
+                // 计算扇区数量 (默认扇区通常为512字节)
+                tot_sect = (fs->n_fatent - 2) * fs->csize;
+                fre_sect = fre_clust * fs->csize;
                 
-                // 创建每一行的容器
+                // 为了避开某些嵌入式 sprintf 不支持浮点运算，采用整数计算
+                // tot_sect / 2 = KB; / 2048 = MB;
+                uint32_t tot_MB = tot_sect / 2048;
+                uint32_t fre_MB = fre_sect / 2048;
+                uint32_t used_percent = tot_sect ? ((tot_sect - fre_sect) * 100 / tot_sect) : 0;
+
+                // 创建包含行 (高度48，容纳标题、进度条、文字)
                 lv_obj_t * item_cont = lv_obj_create(file_list_cont);
-                lv_obj_set_size(item_cont, 240, 20);
+                lv_obj_set_size(item_cont, 240, 48);
                 lv_obj_set_pos(item_cont, 0, y_ofs);
                 remove_default_style(item_cont);
                 
-                // 增加鼠标悬浮态的淡灰色背景
                 lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_HOVERED | LV_PART_MAIN);
                 lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xE0E0E0), LV_STATE_HOVERED | LV_PART_MAIN);
                 lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_PRESSED | LV_PART_MAIN);
                 lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xC0C0C0), LV_STATE_PRESSED | LV_PART_MAIN);
                 
-                // 左侧 20*20 图标 (盘符统一当成文件夹图标)
+                // 1. 左侧图标 (居中稍微靠左)
                 lv_obj_t * icon = lv_img_create(item_cont);
-                lv_img_set_src(icon, &file_folder_icon);
+                lv_img_set_src(icon, &file_folder_icon); // 暂时代替磁盘图标
                 lv_obj_set_size(icon, 16, 16);
-                lv_obj_align(icon, LV_ALIGN_LEFT_MID, 2, 0);
+                lv_obj_align(icon, LV_ALIGN_LEFT_MID, 8, 0);
                 
-                // 右侧 盘符名 Label (例如 "0:")
+                // 2. 盘符名称 (右上部)
+                const char * disk_name = (i == 0) ? "SD卡 (0:)" : ((i == 1) ? "U盘 1 (1:)" : "U盘 2 (2:)");
                 lv_obj_t * name_label = lv_label_create(item_cont);
-                lv_label_set_text(name_label, drive_path);
-                lv_label_set_long_mode(name_label, LV_LABEL_LONG_CLIP);
-                lv_obj_set_width(name_label, 220);
-                lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 20, 0);
+                lv_obj_set_style_text_font(name_label, &lv_font_12, 0);
+                lv_label_set_text(name_label, disk_name);
+                lv_obj_align(name_label, LV_ALIGN_TOP_LEFT, 36, 4);
                 
-                // 使整行可点击
+                // 3. 存储容量进度条
+                lv_obj_t * bar = lv_bar_create(item_cont);
+                lv_obj_set_size(bar, 190, 6);
+                lv_obj_align(bar, LV_ALIGN_TOP_LEFT, 36, 22);
+                lv_bar_set_range(bar, 0, 100);
+                lv_bar_set_value(bar, used_percent, LV_ANIM_OFF);
+                
+                // 4. 具体容量数值说明 (右下部，使用重着色置灰)
+                char size_str[64];
+                if (tot_MB >= 1024) { // 转换为 GB 显示
+                    sprintf(size_str, "#808080 %lu.%lu GB 可用，共 %lu.%lu GB#", 
+                            fre_MB / 1024, (fre_MB % 1024) * 10 / 1024,
+                            tot_MB / 1024, (tot_MB % 1024) * 10 / 1024);
+                } else { // 保持 MB 显示
+                    sprintf(size_str, "#808080 %lu MB 可用，共 %lu MB#", fre_MB, tot_MB);
+                }
+                
+                lv_obj_t * size_label = lv_label_create(item_cont);
+                lv_obj_set_style_text_font(size_label, &lv_font_12, 0);
+                lv_label_set_recolor(size_label, true);
+                lv_label_set_text(size_label, size_str);
+                lv_obj_align(size_label, LV_ALIGN_TOP_LEFT, 36, 32);
+                
+                // 绑定点击事件
                 lv_obj_add_flag(item_cont, LV_OBJ_FLAG_CLICKABLE);
-                
-                // 动态分配内存保存盘符名，作为文件夹点击事件处理
                 char * folder_name = lv_mem_alloc(strlen(drive_path) + 1);
                 strcpy(folder_name, drive_path);
                 lv_obj_add_event_cb(item_cont, folder_click_event_cb, LV_EVENT_CLICKED, folder_name);
                 lv_obj_add_event_cb(item_cont, item_delete_event_cb, LV_EVENT_DELETE, folder_name);
                 
-                y_ofs += 20;
+                y_ofs += 48; // 行距增加到 48
             }
         }
         return; // 盘符遍历结束，直接返回
     }
 
-    // ===== 正常读取目录下的文件 =====
+    // ===== 正常读取目录下的文件 (原逻辑) =====
     DIR dir;
     FILINFO fno;
     FRESULT res;
 
     // 打开当前目录
     res = f_opendir(&dir, current_path);
-    if (res != FR_OK) return; // 打开失败则直接返回
+    if (res != FR_OK) return; 
 
     while (1) {
         res = f_readdir(&dir, &fno);
-        if (res != FR_OK || fno.fname[0] == 0) break; // 读取完毕或出错
+        if (res != FR_OK || fno.fname[0] == 0) break;
         
-        // 忽略隐藏文件或系统文件
         if (fno.fattrib & (AM_HID | AM_SYS)) continue;
 
-        // 创建每一行的容器
         lv_obj_t * item_cont = lv_obj_create(file_list_cont);
-        lv_obj_set_size(item_cont, 240, 20);
+        lv_obj_set_size(item_cont, 240, 20); // 正常文件列表维持 20 高度
         lv_obj_set_pos(item_cont, 0, y_ofs);
         remove_default_style(item_cont);
 
-        // 增加鼠标悬浮态的淡灰色背景
         lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_HOVERED | LV_PART_MAIN);
         lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xE0E0E0), LV_STATE_HOVERED | LV_PART_MAIN);
         lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_PRESSED | LV_PART_MAIN);
         lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xC0C0C0), LV_STATE_PRESSED | LV_PART_MAIN);
         
-        // 判断是文件还是文件夹
         bool is_dir = (fno.fattrib & AM_DIR) ? true : false;
         
-        // 左侧 20*20 图标
         lv_obj_t * icon = lv_img_create(item_cont);
         lv_img_set_src(icon, is_dir ? &file_folder_icon : &file_file_icon);
         lv_obj_set_size(icon, 16, 16);
         lv_obj_align(icon, LV_ALIGN_LEFT_MID, 2, 0);
         
-        // 右侧 文件名 Label
         lv_obj_t * name_label = lv_label_create(item_cont);
+        lv_obj_set_style_text_font(name_label, &lv_font_12, 0);
         lv_label_set_text(name_label, fno.fname);
-        lv_label_set_long_mode(name_label, LV_LABEL_LONG_CLIP); // 超出截断
+        lv_label_set_long_mode(name_label, LV_LABEL_LONG_CLIP);
         lv_obj_set_width(name_label, 220);
         lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 20, 0);
         
-        // 使整行可点击
         lv_obj_add_flag(item_cont, LV_OBJ_FLAG_CLICKABLE);
         
         if (is_dir) {
-            // 文件夹：进入目录，动态分配内存保存文件夹名
             char * folder_name = lv_mem_alloc(strlen(fno.fname) + 1);
             strcpy(folder_name, fno.fname);
             lv_obj_add_event_cb(item_cont, folder_click_event_cb, LV_EVENT_CLICKED, folder_name);
             lv_obj_add_event_cb(item_cont, item_delete_event_cb, LV_EVENT_DELETE, folder_name);
         } else {
-            // 文件：分配内存保存文件名
             char * file_name = lv_mem_alloc(strlen(fno.fname) + 1);
             strcpy(file_name, fno.fname);
             lv_obj_add_event_cb(item_cont, file_click_event_cb, LV_EVENT_CLICKED, file_name);
@@ -269,16 +285,13 @@ static void load_file_list(void)
 static void Update_File(void)
 {
     if (file_unit_cont == NULL) return;
-    
-    // 更新路径 Label
-    // 如果是最顶层（空），为了 UI 友好，显示为 "Root" 或 "/"
+
     if (strcmp(current_path, "") == 0) {
-        lv_label_set_text(path_label, "/:");
+        lv_label_set_text(path_label, "此电脑");
     } else {
         lv_label_set_text(path_label, current_path);
     }
-    
-    // 重新加载文件列表
+
     load_file_list();
 }
 
@@ -289,27 +302,23 @@ void Create_File_Unit(void)
 {
     if (file_unit_cont != NULL) return;
 
-    // 重置文件选中标志
-    g_file_chosen = 0;
-    memset(chosen_file_path, 0, sizeof(chosen_file_path));
+    if (current_path == NULL) current_path = malloc_bsc(256);
 
-    // 1. 创建主容器 240*180
+    g_file_chosen = 0;
+
     file_unit_cont = lv_obj_create(lv_scr_act());
     lv_obj_set_size(file_unit_cont, 240, 180);
     lv_obj_center(file_unit_cont);
     
-    // 设置主背景为白色，去除边框等
     remove_default_style(file_unit_cont);
     lv_obj_set_style_bg_opa(file_unit_cont, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(file_unit_cont, lv_color_white(), LV_PART_MAIN);
     
-    // 2. 创建第一行（头部） 240*20
     lv_obj_t * header_cont = lv_obj_create(file_unit_cont);
     lv_obj_set_size(header_cont, 240, 20);
     lv_obj_align(header_cont, LV_ALIGN_TOP_MID, 0, 0);
     remove_default_style(header_cont);
     
-    // 头部左侧返回按钮 20*20
     lv_obj_t * back_btn = lv_img_create(header_cont);
     lv_img_set_src(back_btn, &file_exit_icon);
     lv_obj_set_size(back_btn, 16, 16);
@@ -317,13 +326,12 @@ void Create_File_Unit(void)
     lv_obj_add_flag(back_btn, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(back_btn, back_click_event_cb, LV_EVENT_CLICKED, NULL);
     
-    // 头部路径显示 Label
     path_label = lv_label_create(header_cont);
+    lv_obj_set_style_text_font(path_label, &lv_font_12, 0);
     lv_label_set_long_mode(path_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(path_label, 220); 
     lv_obj_align(path_label, LV_ALIGN_LEFT_MID, 20, 0);
     
-    // 3. 创建下方文件列表容器 240*160
     file_list_cont = lv_obj_create(file_unit_cont);
     lv_obj_set_size(file_list_cont, 240, 160);
     lv_obj_align(file_list_cont, LV_ALIGN_TOP_MID, 0, 20);
@@ -342,8 +350,26 @@ void Update_File_Unit(void)
     {
         uint8_t *ext = fatfs_get_extension(chosen_file_path);
 
-        if (ext != NULL) 
+        if (ext != NULL)
         {
+            if (strcmp((char*)ext, "mjpeg") == 0 ||
+                strcmp((char*)ext, "raw")   == 0 ||
+                strcmp((char*)ext, "bmp")   == 0 ||
+                strcmp((char*)ext, "jpeg")  == 0 ||
+                strcmp((char*)ext, "jpg")   == 0 ||
+                strcmp((char*)ext, "png")   == 0 ||
+                strcmp((char*)ext, "gif")   == 0) {
+                g_file_chosen = 0;
+                Taskmanager_Ctrl(Task_N_Video, Task_T_Creat, 0);
+                return;
+            }
+
+            if (strcmp((char*)ext, "nes") == 0) {
+                g_file_chosen = 0;
+                Taskmanager_Ctrl(Task_N_Game, Task_T_Creat, 0);
+                return;
+            }
+
             const char * supported_exts[] = {
                 "txt", "c", "h", "cpp", "hpp", "cc", "ino",
                 "py", "js", "ts", "html", "css",
@@ -352,10 +378,10 @@ void Update_File_Unit(void)
                 "json", "xml", "yaml", "yml", "toml",
                 "ini", "conf", "cfg", "md", "sql", "log"
             };
-            
+
             bool is_supported = false;
             int num_exts = sizeof(supported_exts) / sizeof(supported_exts[0]);
-            
+
             for (int i = 0; i < num_exts; i++) {
                 if (strcmp((char*)ext, supported_exts[i]) == 0) {
                     is_supported = true;
@@ -363,7 +389,7 @@ void Update_File_Unit(void)
                 }
             }
 
-            if (is_supported) 
+            if (is_supported)
             {
                 Page_Request_Switch(PAGE_TEXT);
                 g_file_chosen = 0;
@@ -373,7 +399,7 @@ void Update_File_Unit(void)
 }
 
 /**
- * @brief 移除文件浏览页面并释放资源，保留 current_path 记忆功能
+ * @brief 移除文件浏览页面并释放资源
  */
 void Remove_File_Unit(void)
 {
@@ -382,5 +408,17 @@ void Remove_File_Unit(void)
         file_unit_cont = NULL;
         path_label = NULL;
         file_list_cont = NULL;
+    }
+    if (current_path) {
+        free_bsc(current_path);
+        current_path = NULL;
+    }
+}
+
+void chosen_file_path_free(void)
+{
+    if (chosen_file_path) {
+        free_bsc(chosen_file_path);
+        chosen_file_path = NULL;
     }
 }

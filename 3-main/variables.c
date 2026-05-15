@@ -5,35 +5,39 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
-#include "semphr.h"
 #include "event_groups.h"
+#include "flashdb.h"
 
-//Semaphore
+//global error bumber
+volatile uint8_t g_error_num = NO_ERROR;
+
+//freertos 互斥锁/信号量 统一定义,各自初始化
 SemaphoreHandle_t xI2SSemaphore = NULL;//music dma 传输完成信号量
 SemaphoreHandle_t xTaskManagerSemaphore = NULL;//taskmanager信号量
 SemaphoreHandle_t xFDBSemaphore = NULL;//FDB信号量
+SemaphoreHandle_t xSDcardMutex = NULL;//sdcard互斥锁
+SemaphoreHandle_t xSDcardSemaphore = NULL;//sdcard计数型信号量
+SemaphoreHandle_t xFlashMutex = NULL;//w25q128互斥锁
+SemaphoreHandle_t xFlashSemaphore = NULL;//w25q128计数型信号量
+SemaphoreHandle_t xBSCMutex = NULL;//tlsf互斥锁
+SemaphoreHandle_t xCCMMutex = NULL;//tlsf互斥锁
+SemaphoreHandle_t xIICMutex = NULL;//iic互斥锁
+SemaphoreHandle_t usb_tx_cplt_sem = NULL; // 发送完成信号量
+SemaphoreHandle_t usb_tx_mutex = NULL;    // 线程安全互斥锁
+EventGroupHandle_t xLcdEventGroup = NULL; // lcd
 
-//event group
-EventGroupHandle_t xLcdEventGroup = NULL;
-
-//pin_ctrl.c
-volatile uint8_t g_vbus_status = 0;      //usb不向外供电时有效 0-低电平 1-高电平
-volatile uint8_t g_charge_status = 0;    //0-不在充电 1-正在充电 2-充电完成
-volatile uint8_t g_headphone_status = 0; //1--耳机插入 0-无插入
-volatile uint8_t g_TFcard_status = 0;    //0-无插入 1-TF卡正常
-
-volatile uint8_t g_maintain_status = 0;   //1--不断电 0-无
-volatile uint8_t g_max98357_ststus = 0;   //1--供电 0-无
-volatile uint8_t g_es9018_status = 0;     //1--工作 0-无
-volatile uint8_t g_hdp0_or_spk1 = 0;      //0--耳机 1-喇叭
-
-//key.c
-volatile uint8_t g_key_WKP_RT = 0;
-volatile uint8_t g_key_L_M_RT = 0;
-volatile uint8_t g_key_R_M_RT = 0;
+//freertos所有任务句柄
+TaskHandle_t Basic_Task_handler   = NULL;
+TaskHandle_t Lvgl_Task_handler    = NULL;
+TaskHandle_t USB_Task_handler     = NULL;
+TaskHandle_t Music_Task_handler   = NULL;
+TaskHandle_t Video_Task_handler   = NULL;
+TaskHandle_t Game_Task_handler    = NULL;
+TaskHandle_t Start_Task_handler   = NULL;
+TaskHandle_t Task_Manager_handler = NULL;
 
 //adc.c
-volatile uint8_t g_adc_dma_finished = 0;
+volatile uint8_t  g_adc_dma_finished = 0;
 
 volatile uint16_t g_host_cc1_value = 4095;
 volatile uint16_t g_host_cc2_value = 4095;
@@ -47,8 +51,26 @@ volatile int8_t g_key_L_Y = 0;
 volatile int8_t g_key_R_X = 0;
 volatile int8_t g_key_R_Y = 0;
 
-//usb_cc.c
 volatile uint8_t g_usb_status = 0;
+
+//key.c
+volatile uint8_t g_key_WKP_RT = 0;
+volatile uint8_t g_key_L_M_RT = 0;
+volatile uint8_t g_key_R_M_RT = 0;
+
+//pin_ctrl.c
+volatile uint8_t g_vbus_status = 0;      //usb不向外供电时有效 0-低电平 1-高电平
+volatile uint8_t g_charge_status = 0;    //0-不在充电 1-正在充电 2-充电完成
+volatile uint8_t g_headphone_status = 0; //1--耳机插入 0-无插入
+volatile uint8_t g_TFcard_status = 0;    //0-无插入 1-TF卡正常
+
+volatile uint8_t g_maintain_status = 0;   //1--不断电 0-无
+volatile uint8_t g_max98357_inited = 0;   //1--供电 0-无
+volatile uint8_t g_es9018_inited = 0;     //1--工作 0-无
+volatile uint8_t g_hdp0_or_spk1 = 0;      //0--耳机 1-喇叭
+
+volatile uint8_t g_es9018_status = 0;
+volatile uint8_t g_max98357_ststus = 0;
 
 //v2p_bat.c
 volatile int8_t g_battery_percent = 0;
@@ -74,6 +96,7 @@ Lunar_t now_lunar;
 volatile uint8_t Music_Status = 0;
 volatile uint8_t Music_Suspend_Flag = 0;
 volatile uint8_t Music_Switch_Method = 0;
+
 //usb
 volatile uint8_t g_usb_function = 0;
 
@@ -91,8 +114,10 @@ volatile uint8_t debug_mode = Debug_Mode_None;
 //lcd
 volatile uint8_t g_lcd_user = LCD_USER_LVGL;
 
-//音量
-volatile uint8_t g_screen_pwm = 0;
+
+volatile uint8_t g_screen_status = 0;//pwm
+
+volatile uint8_t g_pwm_inited = 0;//pwm
 
 volatile uint8_t g_hdp_value = 32;
 volatile uint8_t g_spk_value = 32;
@@ -101,7 +126,12 @@ volatile uint8_t g_brightness = 32;
 volatile uint8_t music_bitdepth = 16;
 
 //file_unit
-char current_path[256] = "";
-char chosen_file_path[256] = "";
+char *current_path = NULL;
+char *chosen_file_path = NULL;
 volatile uint8_t g_file_chosen = 0;
 
+//flashdb
+struct fdb_kvdb kvdb = { 0 };
+struct fdb_tsdb tsdb = { 0 };
+
+volatile uint8_t g_TFcard_inited = 0;

@@ -4,6 +4,7 @@
 #include "variables.h"
 #include "defines.h"
 #include "pinyin_find.h"
+#include "keyboard.h"
 
 #define CAND_NUM 7
 #define PY_BUF_MAX 16
@@ -21,6 +22,7 @@ typedef enum
 } ime_mode_t;
 
 static ime_mode_t ime_mode = IME_MODE_CN;
+static bool is_pure_en_mode = false; // 新增标记，判断当前是否为纯英文键盘模式
 
 static lv_obj_t *kb = NULL;
 static lv_obj_t *click_catcher = NULL;
@@ -251,7 +253,8 @@ static void kb_event_cb(lv_event_t * e)
 
         map_and_send_usb_key(txt);
 
-        if (ime_mode == IME_MODE_CN)
+        // 如果是中英混合键盘且处于中文模式下，处理拼音输入
+        if (!is_pure_en_mode && ime_mode == IME_MODE_CN)
         {
             if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0)
             {
@@ -278,21 +281,27 @@ static void kb_event_cb(lv_event_t * e)
                 return;
             }
 
-			if (strlen(txt) == 1) {
-				char c = txt[0];
-				if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-					if (c >= 'A' && c <= 'Z') {
-						c = c - 'A' + 'a';
-					}
-					py_add(c);
-					cand_offset = 0;
-					cand_update();
-					return;
-				}
-			}
-			
+            if (strlen(txt) == 1) {
+                char c = txt[0];
+                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                    if (c >= 'A' && c <= 'Z') {
+                        c = c - 'A' + 'a';
+                    }
+                    py_add(c);
+                    cand_offset = 0;
+                    cand_update();
+                    return;
+                }
+            }
+            
             if (current_ta) lv_textarea_add_text(current_ta, txt);
             return;
+        }
+        else 
+        {
+            // 纯英文键盘模式下，直接由 lv_keyboard_set_textarea 处理输入，
+            // 咱们只用拦截并手动插入换行，或者其他想特殊拦截的符号即可
+            // (LVGL原生行为已经包含字符输入了)
         }
     }
 
@@ -303,11 +312,13 @@ static void kb_event_cb(lv_event_t * e)
 }
 
 /***********************
- * 对外接口1: 创建并显示键盘
+ * 内部统一创建逻辑
  ***********************/
-void Create_Keyboard(lv_obj_t * ta)
+static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
 {
-    // 随用随创建：如果对象还不存在，则初始化界面
+    is_pure_en_mode = pure_en;
+    current_ta = ta;
+
     if (kb == NULL) 
     {
         click_catcher = lv_obj_create(lv_layer_top());
@@ -315,11 +326,16 @@ void Create_Keyboard(lv_obj_t * ta)
         lv_obj_set_pos(click_catcher, 0, 0);
         lv_obj_set_style_bg_opa(click_catcher, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_clear_flag(click_catcher, LV_OBJ_FLAG_SCROLLABLE);
+		lv_obj_set_style_border_width(click_catcher, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(click_catcher, 0, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(click_catcher, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(click_catcher, 0, LV_PART_MAIN);
         lv_obj_add_event_cb(click_catcher, catcher_click_cb, LV_EVENT_CLICKED, NULL);
 
         cand_panel = lv_obj_create(lv_layer_top());
         lv_obj_set_size(cand_panel, 240, 24);
-        lv_obj_align(cand_panel, LV_ALIGN_BOTTOM_MID, 0, -120);
+        // 修改：按键高度减小后，原120变100，所以上面板在-100处
+        lv_obj_align(cand_panel, LV_ALIGN_BOTTOM_MID, 0, -100); 
         lv_obj_clear_flag(cand_panel, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0xC8C8C8), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(cand_panel, LV_OPA_100, LV_PART_MAIN);
@@ -397,8 +413,10 @@ void Create_Keyboard(lv_obj_t * ta)
         lv_obj_center(label);
 
         kb = lv_keyboard_create(lv_layer_top());
-        lv_obj_set_size(kb, 240, 120);
+        // 修改：高度缩减 20pix (原 120 -> 100)
+        lv_obj_set_size(kb, 240, 100);
         lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+		lv_obj_clear_flag(kb, LV_OBJ_FLAG_SCROLLABLE);
         lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_obj_set_style_pad_row(kb, 2, 0);
         lv_obj_set_style_pad_column(kb, 2, 0);
@@ -416,30 +434,55 @@ void Create_Keyboard(lv_obj_t * ta)
         lv_obj_add_event_cb(kb, kb_event_cb, LV_EVENT_ALL, NULL);
     }
 
-    /* 以下部分相当于原本 Show_Keyboard 的功能 */
-    current_ta = ta;
+    // 确保底层防误触遮罩和键盘本体可见
+    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(click_catcher, LV_OBJ_FLAG_HIDDEN);
 
-    if (ime_mode == IME_MODE_EN && ta != NULL) {
+    if (is_pure_en_mode) 
+    {
+        // 纯英文模式下：强制英文、自动关联 textarea、隐藏拼音候选区
+        ime_mode = IME_MODE_EN;
         lv_keyboard_set_textarea(kb, ta);
-    } else {
-        lv_keyboard_set_textarea(kb, NULL);
+        if (cand_panel) {
+            lv_obj_add_flag(cand_panel, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    else 
+    {
+        // 中英混合模式下：根据当前输入法状态决定行为、显示拼音候选区
+        if (ime_mode == IME_MODE_EN && ta != NULL) {
+            lv_keyboard_set_textarea(kb, ta);
+        } else {
+            lv_keyboard_set_textarea(kb, NULL);
+        }
+        if (cand_panel) {
+            lv_obj_clear_flag(cand_panel, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     py_clear();
     cand_offset = 0;
     cand_update();
+}
 
-    // 确保对象可见
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(click_catcher, LV_OBJ_FLAG_HIDDEN);
-    if (cand_panel) {
-        lv_obj_clear_flag(cand_panel, LV_OBJ_FLAG_HIDDEN);
-    }
+/***********************
+ * 对外接口1: 创建并显示中英双语键盘
+ ***********************/
+void Create_Keyboard(lv_obj_t * ta)
+{
+    create_keyboard_internal(ta, false);
+}
+
+/***********************
+ * 对外接口1_EN: 创建并显示纯英文键盘
+ ***********************/
+void Create_Keyboard_EN(lv_obj_t * ta)
+{
+    create_keyboard_internal(ta, true);
 }
 
 /***********************
  * 内部函数：隐藏键盘
- * (不立刻删除，仅隐藏)
  ***********************/
 static void close_keyboard_internal(void)
 {

@@ -102,7 +102,7 @@ void Remove_Card_Icon(void)
 
 void Update_Card_Icon(void)
 {
-    if(!g_TFcard_status) Create_Card_Icon();
+    if(!g_TFcard_inited) Create_Card_Icon();
     else Remove_Card_Icon();
 }
 

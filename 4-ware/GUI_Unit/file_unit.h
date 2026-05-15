@@ -9,5 +9,6 @@ void Update_File_Unit(void);
 
 void Remove_File_Unit(void);
 
+void chosen_file_path_free(void);
 
 #endif

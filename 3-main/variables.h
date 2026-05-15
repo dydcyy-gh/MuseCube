@@ -17,13 +17,30 @@
 } while(0)
 //GLOBAL(global_counter = 1);
 
-//Semaphore
+//Semaphore event group
 extern SemaphoreHandle_t xI2SSemaphore;//music dma 传输完成信号量
 extern SemaphoreHandle_t xTaskManagerSemaphore;//taskmanager信号量
 extern SemaphoreHandle_t xFDBSemaphore;//FDB信号量
-
-//event group
+extern SemaphoreHandle_t xSDcardMutex;//sdcard互斥锁
+extern SemaphoreHandle_t xSDcardSemaphore;//sdcard计数型信号量
+extern SemaphoreHandle_t xFlashMutex;//w25q128互斥锁
+extern SemaphoreHandle_t xFlashSemaphore;//w25q128计数型信号量
+extern SemaphoreHandle_t xBSCMutex;//tlsf互斥锁
+extern SemaphoreHandle_t xCCMMutex;//tlsf互斥锁
+extern SemaphoreHandle_t xIICMutex;//iic互斥锁
+extern SemaphoreHandle_t usb_tx_cplt_sem; // 发送完成信号量
+extern SemaphoreHandle_t usb_tx_mutex;    // 线程安全互斥锁
 extern EventGroupHandle_t xLcdEventGroup;
+
+//freertos所有任务句柄
+extern TaskHandle_t Basic_Task_handler;
+extern TaskHandle_t Lvgl_Task_handler;
+extern TaskHandle_t USB_Task_handler;
+extern TaskHandle_t Music_Task_handler;  
+extern TaskHandle_t Video_Task_handler;
+extern TaskHandle_t Game_Task_handler;
+extern TaskHandle_t Start_Task_handler;
+extern TaskHandle_t Task_Manager_handler;
 
 //pin_ctrl.c
 extern volatile uint8_t g_vbus_status;      //usb不向外供电时有效 0-低电平 1-高电平
@@ -33,6 +50,9 @@ extern volatile uint8_t g_TFcard_status;//0-无插入 1-TF卡入 2-TF卡故障
 extern volatile uint8_t g_maintain_status;//0-free 1-maintain
 extern volatile uint8_t g_max98357_ststus;    //1--供电 0-无
 extern volatile uint8_t g_es9018_status;     //1--供电 0-无
+
+extern volatile uint8_t g_max98357_inited;   //1--供电 0-无
+extern volatile uint8_t g_es9018_inited;     //1--工作 0-无
 
 //key.c
 extern volatile uint8_t g_key_WKP_RT;
@@ -101,7 +121,8 @@ extern volatile uint8_t debug_mode;
 //lcd
 extern volatile uint8_t g_lcd_user;
 
-extern volatile uint8_t g_screen_pwm;
+extern volatile uint8_t g_screen_status;
+extern volatile uint8_t g_pwm_inited;
 
 extern volatile uint8_t g_hdp0_or_spk1;
 extern volatile uint8_t g_hdp_value;
@@ -111,8 +132,14 @@ extern volatile uint8_t g_brightness;
 extern volatile uint8_t music_bitdepth;
 
 //file_unit
-extern char current_path[256];
-extern char chosen_file_path[256];
+extern char *current_path;
+extern char *chosen_file_path;
 extern volatile uint8_t g_file_chosen;
+
+//flashdb
+extern struct fdb_kvdb kvdb;
+extern struct fdb_tsdb tsdb;
+
+extern volatile uint8_t g_TFcard_inited;
 
 #endif

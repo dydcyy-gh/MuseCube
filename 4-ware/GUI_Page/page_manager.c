@@ -3,7 +3,11 @@
 #include "task.h"
 #include "page_manager.h"
 #include "keyboard.h"
+#include "variables.h"
 #include <string.h>
+#include <stdarg.h>
+#include "file_unit.h"
+#include "malloc.h"
 #include "start_page.h"
 #include "mem_monitor_page.h"
 #include "key_test_page.h"
@@ -17,8 +21,18 @@
 #include "settings_page.h"
 #include "text_page.h"
 #include "canvas_page.h"
+#include "about_page.h"
+#include "es9018_page.h"
+#include "time_set_page.h"
+#include "clock_page.h"
+#include "calendar_page.h"
+#include "words_page.h"
+#include "calculator_page.h"
+#include "cmd_page.h"
+#include "lots_page.h"
+#include "album_page.h"
 
-//不受lvgl管理的页面
+// 不受lvgl管理的页面
 static const Page_Interface_t page_game_interface = { .id = PAGE_GAME };
 static const Page_Interface_t page_video_interface = { .id = PAGE_VIDEO };
 static const Page_Interface_t page_display_interface = { .id = PAGE_DISPLAY };
@@ -42,6 +56,16 @@ static const Page_Interface_t* const page_registry[PAGE_MAX_ID] = {
 	[PAGE_SETTINGS]   = &page_settings_interface,
 	[PAGE_TEXT]       = &page_text_interface,
 	[PAGE_CANVAS]     = &page_canvas_interface,
+	[PAGE_ABOUT]      = &page_about_interface,
+	[PAGE_ES9018]     = &page_es9018_interface,
+	[PAGE_TIME_SET]   = &page_time_set_interface,
+	[PAGE_CLOCK]      = &page_clock_interface,
+	[PAGE_CALENDAR]   = &page_calendar_interface,
+	[PAGE_WORDS]      = &page_words_interface,
+	[PAGE_CALCULATOR] = &page_calculator_interface,
+	[PAGE_CMD]        = &page_cmd_interface,
+	[PAGE_LOTS]       = &page_lots_interface,
+	[PAGE_ALBUM]      = &page_album_interface,
 };
 
 // 2. 将状态单独提取出来，放在 SRAM 中
@@ -72,15 +96,26 @@ uint32_t Page_Get_Current(void)
 // 初始化
 void Page_Manager_Init(void)
 {
+    // 调用时同样生效：只有一个参数，宏将其转为 (PAGE_START, NULL)
 	Page_Request_Switch(PAGE_START);
 }
 
-// 请求切换页面
-void Page_Request_Switch(uint32_t new_page_id)
+void _Page_Request_Switch_Impl(uint32_t new_page_id, const char *path, ...)
 {
     if (Page_Get_Interface(new_page_id) != NULL) {
+        if (new_page_id == PAGE_FILE) {
+            if (current_path == NULL) 
+			{
+				current_path = malloc_bsc(256);
+			}
+            if (current_path) 
+			{
+                strncpy(current_path, path ? path : "", 255);
+                current_path[255] = '\0';
+            }
+        }
         next_page_id = new_page_id;
-        is_back_action = false; 
+        is_back_action = false;
     }
 }
 
@@ -153,8 +188,10 @@ void Page_Manager_Loop(void)
     }
     
     // 4. 执行当前页面的刷新逻辑
-    const Page_Interface_t* current_page = Page_Get_Interface(current_page_id);
-    if (current_page && current_page->update && page_states[current_page_id] == PAGE_STATE_ACTIVE) {
-        current_page->update();
+    if (current_page_id < PAGE_MAX_ID) {
+        const Page_Interface_t* current_page = Page_Get_Interface(current_page_id);
+        if (current_page && current_page->update && page_states[current_page_id] == PAGE_STATE_ACTIVE) {
+            current_page->update();
+        }
     }
 }

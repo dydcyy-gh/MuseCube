@@ -23,14 +23,24 @@ static void log_ctrl_click_cb(lv_event_t * e) {
 	Page_Request_Switch(PAGE_LOG_CTRL);
 }
 
+static void about_click_cb(lv_event_t * e) {
+	Page_Request_Switch(PAGE_ABOUT);
+}
+
+static void es9018_click_cb(lv_event_t * e) {
+	Page_Request_Switch(PAGE_ES9018);
+}
+
+static void time_set_click_cb(lv_event_t * e) {
+	Page_Request_Switch(PAGE_TIME_SET);
+}
 
 static const setting_item_t settings_list[] = {
     {"输入设备监控",     key_test_click_cb},
     {"日志设置与显示",   log_ctrl_click_cb},
-    {"声音与振动",       NULL},
-    {"存储空间管理",     NULL},
-    {"恢复出厂设置",     NULL},
-    {"关于本机信息",     NULL},
+    {"关于本机信息",     about_click_cb},
+	{"DAC设置",          es9018_click_cb},
+	{"日期与时间",       time_set_click_cb},
 };
 
 static void remove_default_style(lv_obj_t * obj)

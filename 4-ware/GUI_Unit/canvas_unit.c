@@ -736,10 +736,10 @@ void Update_Canvas_Unit(void)
     }
     // ============================================
 
-    static uint8_t last_L = 0;
+    static uint8_t last_R = 0;
     
-    // L键松开检测 (呼出/隐藏浮动栏)
-    if(!g_key_L_M_RT && last_L)
+    // R键松开检测 (呼出/隐藏浮动栏)
+    if(!g_key_R_M_RT && last_R)
     {
         if (float_panel == NULL) {
             float_page = 0; // 呼出时保证默认在第一页
@@ -776,7 +776,7 @@ void Update_Canvas_Unit(void)
         }
     }
     
-    last_L = g_key_L_M_RT;
+    last_R = g_key_R_M_RT;
 }
 
 void Remove_Canvas_Unit(void)

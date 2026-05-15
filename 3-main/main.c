@@ -4,16 +4,6 @@
 
 uint8_t init_res = 0;
 
-TaskHandle_t    Start_Task_handler;
-void Start_Task( void * pvParameters );
-
-TaskHandle_t    Task_Manager_handler;
-void Task_Manager( void * pvParameters );
-
-//flashdb
-struct fdb_kvdb kvdb = { 0 };
-struct fdb_tsdb tsdb = { 0 };
-
 int main(void)
 {
 	SCB->VTOR = 0x08010000; // 重定向中断向量表到 APP 起始地址
@@ -37,35 +27,17 @@ int main(void)
 
 void Start_Task( void * pvParameters )
 {
-	//creat Mutex,Semaphore
-	xI2SSemaphore = xSemaphoreCreateBinary();
-	xTaskManagerSemaphore = xSemaphoreCreateBinary();
-	xFDBSemaphore = xSemaphoreCreateMutex();
-
-	//key init
+	//此处只初始化上电后不再deinit的硬件
 	Wakeup_Key_Init();
 	Stick_Middle_Init();
-	
-	//pin
 	Pin_Ctrl_Init();
-
-	//rng
 	RNG_Init();
-
-	//adc
 	ADC1_DMA_Init();
-	
-	//rtc time
+
 	init_res = RTC_Clock_Init();
-
-	//sdcard
-	init_res = SD_Init();
-
+	
 	//w25q128
 	init_res = W25QXX_Init();
-
-	//fatfs
-	init_res = fatfs_mount(DEV_SD);
 
 	// FlashDB KVDB Init
     fdb_kvdb_control(&kvdb, FDB_KVDB_CTRL_SET_LOCK, (void *)fdb_lock);
@@ -84,7 +56,8 @@ void Start_Task( void * pvParameters )
 		
 	//creat task manager
     xTaskCreate(Task_Manager,"Task_Manager",TASK_MANAGER_STACK_SIZE,NULL,TASK_MANAGER_PRIO,&Task_Manager_handler );
-				
+	xTaskManagerSemaphore = xSemaphoreCreateBinary();
+
 	Taskmanager_Ctrl(Task_N_Basic, Task_T_Creat, 0);    //basic task
 	Taskmanager_Ctrl(Task_N_LVGL, Task_T_Creat, 0);     //LVGL task
 	Taskmanager_Ctrl(Task_N_Music, Task_T_Creat, 0);     //MUSIC task
