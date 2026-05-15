@@ -110,6 +110,7 @@ MuseCube/                          Handheld multimedia player firmware project b
 ├── bin2uf2/                           Firmware format conversion tool: Python script to convert Keil .bin/.hex output to UF2 format
 │
 └── TFcard_files/                      System resource files to be placed on the TF card (music, pictures, fonts, game ROMs, lyrics, text files, word lists, etc.)
+```
 
 ### Building
 - IDE: Keil MDK 5  
