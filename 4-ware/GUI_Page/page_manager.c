@@ -31,6 +31,8 @@
 #include "cmd_page.h"
 #include "lots_page.h"
 #include "album_page.h"
+#include "font_update_page.h"
+#include "serial_page.h"
 
 // 不受lvgl管理的页面
 static const Page_Interface_t page_game_interface = { .id = PAGE_GAME };
@@ -66,6 +68,8 @@ static const Page_Interface_t* const page_registry[PAGE_MAX_ID] = {
 	[PAGE_CMD]        = &page_cmd_interface,
 	[PAGE_LOTS]       = &page_lots_interface,
 	[PAGE_ALBUM]      = &page_album_interface,
+	[PAGE_FONT_UPDATE] = &page_font_update_interface,
+	[PAGE_SERIAL]      = &page_serial_interface,
 };
 
 // 2. 将状态单独提取出来，放在 SRAM 中
@@ -96,8 +100,10 @@ uint32_t Page_Get_Current(void)
 // 初始化
 void Page_Manager_Init(void)
 {
-    // 调用时同样生效：只有一个参数，宏将其转为 (PAGE_START, NULL)
-	Page_Request_Switch(PAGE_START);
+	if (g_font_need_update)
+		Page_Request_Switch(PAGE_FONT_UPDATE);
+	else
+		Page_Request_Switch(PAGE_START);
 }
 
 void _Page_Request_Switch_Impl(uint32_t new_page_id, const char *path, ...)
@@ -129,6 +135,14 @@ void Page_Back(void)
     } else if (current_page_id > PAGE_DESKTOP) {
         next_page_id = PAGE_DESKTOP;
         is_back_action = true;
+    }
+}
+
+// 手动推入历史栈（用于 LVGL 被挂起前保存当前页面）
+void Page_Push_History(uint32_t page_id)
+{
+    if (page_id > PAGE_DESKTOP && history_count < PAGE_HISTORY_MAX_DEPTH) {
+        page_history_stack[history_count++] = page_id;
     }
 }
 

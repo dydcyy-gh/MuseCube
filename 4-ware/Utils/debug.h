@@ -9,8 +9,8 @@
 #include "defines.h"
 
 #define debug_printf(format, ...) do {                                  \
-    if (debug_mode == Debug_Mode_None) break;                           \
-    switch (debug_mode) {                                               \
+    if (kv_debug_mode == Debug_Mode_None) break;                           \
+    switch (kv_debug_mode) {                                               \
         case Debug_Mode_TSDB:                                           \
             tsdb_printf(format, ##__VA_ARGS__);                         \
             break;                                                      \

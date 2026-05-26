@@ -5,15 +5,10 @@
 #include "defines.h"
 #include "pinyin_find.h"
 #include "keyboard.h"
+#include "variables.h"
 
 #define CAND_NUM 7
 #define PY_BUF_MAX 16
-
-// 引用外部 USB 键盘状态变量
-extern volatile uint8_t g_usb_function;
-extern volatile uint8_t g_usb_kbd_modifier;
-extern volatile uint8_t g_usb_kbd_key;
-extern volatile uint8_t g_usb_kbd_trigger;
 
 typedef enum
 {
@@ -22,7 +17,7 @@ typedef enum
 } ime_mode_t;
 
 static ime_mode_t ime_mode = IME_MODE_CN;
-static bool is_pure_en_mode = false; // 新增标记，判断当前是否为纯英文键盘模式
+static bool is_pure_en_mode = false; 
 
 static lv_obj_t *kb = NULL;
 static lv_obj_t *click_catcher = NULL;
@@ -41,11 +36,10 @@ static int cand_total = 0;
 static char py_buf[PY_BUF_MAX];
 static uint8_t py_len = 0;
 
-// 内部隐藏函数，替代原来的 Hide_Keyboard
 static void close_keyboard_internal(void);
 
 // ========================================================
-// ASCII -> USB HID 键码映射函数
+// ASCII -> USB HID 键码映射函数 (Device模式向外发送用)
 // ========================================================
 static void map_and_send_usb_key(const char *txt)
 {
@@ -131,6 +125,12 @@ static void py_add(char c)
 static void cand_update(void)
 {
     const char *mb = pinyin_lookup(py_buf);
+    if (mb == NULL && py_len > 0) {
+        mb = pinyin_lookup_prefix(py_buf);
+    }
+    if (mb == NULL && py_len > 0) {
+        mb = pinyin_lookup_fuzzy(py_buf);
+    }
     int total = 0;
     if (mb) {
         total = strlen(mb) / 3; 
@@ -239,8 +239,103 @@ static void catcher_click_cb(lv_event_t * e)
     close_keyboard_internal();
 }
 
+// ========================================================
+// 统一按键字符处理引擎 (支持软键盘与物理键盘)
+// ========================================================
+static void handle_keyboard_input(const char *txt, bool from_physical_kb)
+{
+    if (current_ta == NULL) return;
+
+    // 1. 如果正在输入拼音，物理键盘快捷选词逻辑
+    if (from_physical_kb && !is_pure_en_mode && ime_mode == IME_MODE_CN && py_len > 0) 
+    {
+        // 数字键 1~7 快捷选词
+        if (txt[0] >= '1' && txt[0] <= '7' && strlen(txt) == 1) {
+            int idx = txt[0] - '1';
+            if (cand_total > 0 && idx < CAND_NUM) {
+                lv_obj_t *label = lv_obj_get_child(cand_btn[idx], 0);
+                const char *cand_txt = lv_label_get_text(label);
+                if (strlen(cand_txt)) lv_textarea_add_text(current_ta, cand_txt);
+                py_clear();
+                cand_offset = 0;
+                cand_update();
+            }
+            return;
+        }
+        // 空格键快捷选第一个词
+        if (txt[0] == ' ') {
+            if (cand_total > 0) {
+                lv_obj_t *label = lv_obj_get_child(cand_btn[0], 0);
+                const char *cand_txt = lv_label_get_text(label);
+                if (strlen(cand_txt)) lv_textarea_add_text(current_ta, cand_txt);
+                py_clear();
+                cand_offset = 0;
+                cand_update();
+            }
+            return;
+        }
+    }
+
+    // 2. 中文模式输入逻辑
+    if (!is_pure_en_mode && ime_mode == IME_MODE_CN)
+    {
+        if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+            if (py_len > 0) {
+                py_len--;
+                py_buf[py_len] = 0;
+                cand_offset = 0;
+                cand_update();
+            } else {
+                lv_textarea_del_char(current_ta);
+            }
+            return;
+        }
+
+        if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0 || strcmp(txt, "Enter") == 0) {
+            lv_textarea_add_text(current_ta, "\n");
+            return;
+        }
+
+        // 过滤掉键盘切换按键
+        if (strcmp(txt, "ABC") == 0 || strcmp(txt, "!#1") == 0 ||
+            strcmp(txt, "?123") == 0 || strcmp(txt, "&123") == 0) {
+            return;
+        }
+
+        // 字母进入拼音缓冲区
+        if (strlen(txt) == 1) {
+            char c = txt[0];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a'; // 转小写
+                py_add(c);
+                cand_offset = 0;
+                cand_update();
+                return;
+            }
+        }
+        
+        // 其他符号直接上屏
+        lv_textarea_add_text(current_ta, txt);
+    }
+    // 3. 纯英文模式输入逻辑
+    else 
+    {
+        // 只有来源是物理键盘，才需要我们手动往 textarea 里面塞字符
+        // 如果是点击软键盘，LVGL的 lv_keyboard_set_textarea 原生机制会自动写入，避免双重输入！
+        if (from_physical_kb) {
+            if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+                lv_textarea_del_char(current_ta);
+            } else if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0 || strcmp(txt, "Enter") == 0) {
+                lv_textarea_add_text(current_ta, "\n");
+            } else {
+                lv_textarea_add_text(current_ta, txt);
+            }
+        }
+    }
+}
+
 /***********************
- * 键盘事件
+ * 屏幕软键盘事件回调
  ***********************/
 static void kb_event_cb(lv_event_t * e)
 {
@@ -251,58 +346,10 @@ static void kb_event_cb(lv_event_t * e)
         uint16_t id = lv_keyboard_get_selected_btn(kb);
         const char *txt = lv_keyboard_get_btn_text(kb, id);
 
-        map_and_send_usb_key(txt);
+        map_and_send_usb_key(txt); // 如果开启了 USB Device 模式，将按键发送给PC
 
-        // 如果是中英混合键盘且处于中文模式下，处理拼音输入
-        if (!is_pure_en_mode && ime_mode == IME_MODE_CN)
-        {
-            if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0)
-            {
-                if (py_len > 0) {
-                    py_len--;
-                    py_buf[py_len] = 0;
-                    cand_offset = 0;
-                    cand_update();
-                } else {
-                    if (current_ta) lv_textarea_del_char(current_ta);
-                }
-                return;
-            }
-
-            if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0 || strcmp(txt, "Enter") == 0)
-            {
-                if (current_ta) lv_textarea_add_text(current_ta, "\n");
-                return;
-            }
-
-            if (strcmp(txt, "ABC") == 0 || strcmp(txt, "!#1") == 0 ||
-                strcmp(txt, "?123") == 0 || strcmp(txt, "&123") == 0)
-            {
-                return;
-            }
-
-            if (strlen(txt) == 1) {
-                char c = txt[0];
-                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-                    if (c >= 'A' && c <= 'Z') {
-                        c = c - 'A' + 'a';
-                    }
-                    py_add(c);
-                    cand_offset = 0;
-                    cand_update();
-                    return;
-                }
-            }
-            
-            if (current_ta) lv_textarea_add_text(current_ta, txt);
-            return;
-        }
-        else 
-        {
-            // 纯英文键盘模式下，直接由 lv_keyboard_set_textarea 处理输入，
-            // 咱们只用拦截并手动插入换行，或者其他想特殊拦截的符号即可
-            // (LVGL原生行为已经包含字符输入了)
-        }
+        // 调用统一引擎，标记为"非物理键盘"
+        handle_keyboard_input(txt, false); 
     }
 
     if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL)
@@ -319,14 +366,16 @@ static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
     is_pure_en_mode = pure_en;
     current_ta = ta;
 
-    if (kb == NULL) 
+    if (kb == NULL)
     {
+        pinyin_buf_init();
+
         click_catcher = lv_obj_create(lv_layer_top());
         lv_obj_set_size(click_catcher, 240, 240);
         lv_obj_set_pos(click_catcher, 0, 0);
         lv_obj_set_style_bg_opa(click_catcher, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_clear_flag(click_catcher, LV_OBJ_FLAG_SCROLLABLE);
-		lv_obj_set_style_border_width(click_catcher, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(click_catcher, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(click_catcher, 0, LV_PART_MAIN);
         lv_obj_set_style_shadow_width(click_catcher, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(click_catcher, 0, LV_PART_MAIN);
@@ -334,7 +383,6 @@ static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
 
         cand_panel = lv_obj_create(lv_layer_top());
         lv_obj_set_size(cand_panel, 240, 24);
-        // 修改：按键高度减小后，原120变100，所以上面板在-100处
         lv_obj_align(cand_panel, LV_ALIGN_BOTTOM_MID, 0, -100); 
         lv_obj_clear_flag(cand_panel, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(cand_panel, lv_color_hex(0xC8C8C8), LV_PART_MAIN);
@@ -413,10 +461,9 @@ static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
         lv_obj_center(label);
 
         kb = lv_keyboard_create(lv_layer_top());
-        // 修改：高度缩减 20pix (原 120 -> 100)
         lv_obj_set_size(kb, 240, 100);
         lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-		lv_obj_clear_flag(kb, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(kb, LV_OBJ_FLAG_SCROLLABLE);
         lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_obj_set_style_pad_row(kb, 2, 0);
         lv_obj_set_style_pad_column(kb, 2, 0);
@@ -434,13 +481,11 @@ static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
         lv_obj_add_event_cb(kb, kb_event_cb, LV_EVENT_ALL, NULL);
     }
 
-    // 确保底层防误触遮罩和键盘本体可见
     lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(click_catcher, LV_OBJ_FLAG_HIDDEN);
 
     if (is_pure_en_mode) 
     {
-        // 纯英文模式下：强制英文、自动关联 textarea、隐藏拼音候选区
         ime_mode = IME_MODE_EN;
         lv_keyboard_set_textarea(kb, ta);
         if (cand_panel) {
@@ -449,7 +494,6 @@ static void create_keyboard_internal(lv_obj_t * ta, bool pure_en)
     }
     else 
     {
-        // 中英混合模式下：根据当前输入法状态决定行为、显示拼音候选区
         if (ime_mode == IME_MODE_EN && ta != NULL) {
             lv_keyboard_set_textarea(kb, ta);
         } else {
@@ -481,7 +525,7 @@ void Create_Keyboard_EN(lv_obj_t * ta)
     create_keyboard_internal(ta, true);
 }
 
-/***********************
+/**********************
  * 内部函数：隐藏键盘
  ***********************/
 static void close_keyboard_internal(void)
@@ -508,9 +552,60 @@ static void close_keyboard_internal(void)
 }
 
 /***********************
- * 对外接口2: 刷新状态(留空备用)
+ * 对外接口2: 刷新并拉取物理实体键盘状态
+ * 需放到 lv_task_handler() 同级的循环内定期调用
  ***********************/
-void Update_Keyboard(void) {}
+void Update_Keyboard(void)
+{
+    // 如果有实体物理键盘按键触发
+    if (g_host_kbd_trigger) 
+    {
+        g_host_kbd_trigger = 0;
+        
+        // 仅在当前有焦点且屏幕键盘处于工作状态时，实体键盘才起作用
+        if (current_ta == NULL || kb == NULL) return; 
+
+        char txt[8] = {0};
+        uint8_t key = g_host_kbd_key;
+        uint8_t mod = g_host_kbd_mod;
+        bool shift = (mod & 0x02) || (mod & 0x20); // 判断是否按住了左右 Shift
+
+        // HID 键码映射到字符
+        if (key >= 0x04 && key <= 0x1D) { // 字母 a-z
+            txt[0] = (shift ? 'A' : 'a') + (key - 0x04);
+        } else if (key >= 0x1E && key <= 0x26) { // 数字 1-9
+            const char num_shift[] = "!@#$%^&*(";
+            txt[0] = shift ? num_shift[key - 0x1E] : ('1' + (key - 0x1E));
+        } else if (key == 0x27) { // 数字 0
+            txt[0] = shift ? ')' : '0';
+        } else if (key == 0x2A) { // Backspace
+            strcpy(txt, LV_SYMBOL_BACKSPACE);
+        } else if (key == 0x28) { // Enter
+            strcpy(txt, "Enter");
+        } else if (key == 0x2C) { // Space
+            txt[0] = ' ';
+        } else {
+            // 其他常用符号映射
+            switch(key) {
+                case 0x2D: txt[0] = shift ? '_' : '-'; break;
+                case 0x2E: txt[0] = shift ? '+' : '='; break;
+                case 0x2F: txt[0] = shift ? '{' : '['; break;
+                case 0x30: txt[0] = shift ? '}' : ']'; break;
+                case 0x31: txt[0] = shift ? '|' : '\\'; break;
+                case 0x33: txt[0] = shift ? ':' : ';'; break;
+                case 0x34: txt[0] = shift ? '"' : '\''; break;
+                case 0x36: txt[0] = shift ? '<' : ','; break;
+                case 0x37: txt[0] = shift ? '>' : '.'; break;
+                case 0x38: txt[0] = shift ? '?' : '/'; break;
+            }
+        }
+
+        // 把实体键盘转换出来的字符，发给通用处理引擎，标记为 from_physical_kb = true
+        if (strlen(txt) > 0) {
+            handle_keyboard_input(txt, true);
+        }
+    }
+}
 
 /***********************
  * 对外接口3: 彻底移除键盘内存
@@ -521,4 +616,6 @@ void Remove_Keyboard(void)
     if (click_catcher != NULL) { lv_obj_del(click_catcher); click_catcher = NULL; }
     if (cand_panel != NULL) { lv_obj_del(cand_panel); cand_panel = NULL; }
     current_ta = NULL;
+
+    pinyin_buf_deinit();
 }

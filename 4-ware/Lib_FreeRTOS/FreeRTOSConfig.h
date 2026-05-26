@@ -135,6 +135,9 @@
 #define vPortSVCHandler                                 SVC_Handler
 
 /* 断言 */
-#define configASSERT( x ) if( ( x ) == 0 ) { taskDISABLE_INTERRUPTS(); for( ;; ); }	
+#define configASSERT( x ) if( ( x ) == 0 ) { taskDISABLE_INTERRUPTS(); for( ;; ); }
+
+/* FreeRTOS 内部日志重定向到 debug_printf */
+#define configPRINTF( X ) debug_printf X	
 
 #endif /* FREERTOS_CONFIG_H */

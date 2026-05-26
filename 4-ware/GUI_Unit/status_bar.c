@@ -74,11 +74,8 @@ static void mid_area_click_cb(lv_event_t * e)
 {
 	// 获取当前正在显示的页面ID
     uint32_t current_id = Page_Get_Current();
-
-    if (current_id == PAGE_START)
-        Page_Request_Switch(PAGE_DESKTOP); 
-	else if (g_usb_function == USBD_KBD)
-		Create_Keyboard(NULL); 
+	
+	if (current_id == PAGE_START) Page_Request_Switch(PAGE_DESKTOP);
 	else Create_Control_Center();
 }
 

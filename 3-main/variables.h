@@ -1,6 +1,7 @@
 //use variables.h to define gloal variables
-#include "stm32f4xx.h" 
+#include "stm32f4xx.h"
 #include "lunar.h"
+#include "es9018k2m.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -39,6 +40,7 @@ extern TaskHandle_t USB_Task_handler;
 extern TaskHandle_t Music_Task_handler;  
 extern TaskHandle_t Video_Task_handler;
 extern TaskHandle_t Game_Task_handler;
+extern TaskHandle_t Font_Task_handler;
 extern TaskHandle_t Start_Task_handler;
 extern TaskHandle_t Task_Manager_handler;
 
@@ -48,8 +50,8 @@ extern volatile uint8_t g_charge_status;//0-不在充电 1-正在充电 2-充电
 extern volatile uint8_t g_headphone_status;//1--耳机插入 0-无插入
 extern volatile uint8_t g_TFcard_status;//0-无插入 1-TF卡入 2-TF卡故障
 extern volatile uint8_t g_maintain_status;//0-free 1-maintain
-extern volatile uint8_t g_max98357_ststus;    //1--供电 0-无
-extern volatile uint8_t g_es9018_status;     //1--供电 0-无
+extern volatile uint8_t kv_max98357_ststus;    //1--供电 0-无
+extern volatile uint8_t kv_es9018_status;     //1--供电 0-无
 
 extern volatile uint8_t g_max98357_inited;   //1--供电 0-无
 extern volatile uint8_t g_es9018_inited;     //1--工作 0-无
@@ -102,10 +104,11 @@ extern Lunar_t now_lunar;
 //music
 extern volatile uint8_t Music_Status;
 extern volatile uint8_t Music_Suspend_Flag;
-extern volatile uint8_t Music_Switch_Method;
+extern volatile uint8_t kv_music_switch_method;
 
 //usb
 extern volatile uint8_t g_usb_function;
+extern volatile uint8_t g_lvgl_input_disabled;
 
 //task manager.c
 extern volatile uint8_t Basic_Task_Status;
@@ -114,20 +117,22 @@ extern volatile uint8_t USB_Task_Status;
 extern volatile uint8_t Music_Task_Status;
 extern volatile uint8_t Game_Task_Status;
 extern volatile uint8_t Video_Task_Status;
+extern volatile uint8_t Font_Task_Status;
 
 //debug
-extern volatile uint8_t debug_mode;
+extern volatile uint8_t kv_debug_mode;
 
 //lcd
 extern volatile uint8_t g_lcd_user;
 
-extern volatile uint8_t g_screen_status;
+extern volatile uint8_t kv_screen_status;
 extern volatile uint8_t g_pwm_inited;
 
-extern volatile uint8_t g_hdp0_or_spk1;
-extern volatile uint8_t g_hdp_value;
-extern volatile uint8_t g_spk_value;
-extern volatile uint8_t g_brightness;
+extern volatile uint8_t kv_hdp0_or_spk1;
+extern volatile uint8_t kv_hdp_value;
+extern volatile uint8_t kv_spk_value;
+extern volatile uint8_t kv_brightness;
+extern volatile ES9018_Config_t kv_es9018_cfg;
 
 extern volatile uint8_t music_bitdepth;
 
@@ -141,5 +146,32 @@ extern struct fdb_kvdb kvdb;
 extern struct fdb_tsdb tsdb;
 
 extern volatile uint8_t g_TFcard_inited;
+
+//font update progress
+
+extern volatile uint8_t g_font_need_update;
+
+extern volatile uint8_t g_font_update_state;      // 0=idle, 1=erasing, 2=writing, 3=done, 0xFF=error
+extern volatile uint8_t g_font_update_progress;   // 0-100
+extern volatile uint8_t g_font_update_file_index; // which file (0-4)
+extern volatile uint8_t g_font_update_error;      // error code when state==0xFF
+
+// variables.c 底部
+extern volatile uint8_t g_host_kbd_key;      // 接收到的 USB 键码
+extern volatile uint8_t g_host_kbd_mod;      // 接收到的修饰键 (Shift等)
+extern volatile uint8_t g_host_kbd_trigger;  // 键按下触发标志位
+
+extern volatile uint8_t g_usb_kbd_modifier; // Shift, Ctrl, Alt 等修饰键
+extern volatile uint8_t g_usb_kbd_key;      // 实际的键码 (Keycode)
+extern volatile uint8_t g_usb_kbd_trigger;  // 状态机：0=空闲, 1=请求按下, 2=请求松开
+
+extern volatile int16_t g_usb_joy_L_X;
+extern volatile int16_t g_usb_joy_L_Y;
+extern volatile int16_t g_usb_joy_R_X;
+extern volatile int16_t g_usb_joy_R_Y;
+
+extern volatile int16_t g_usb_mouse_dx;
+extern volatile int16_t g_usb_mouse_dy;
+extern volatile uint8_t g_usb_mouse_btn;
 
 #endif

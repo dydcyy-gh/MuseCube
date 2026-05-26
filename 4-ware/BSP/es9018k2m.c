@@ -8,8 +8,8 @@
 #include "systick_conf.h"
 #include "pin_ctrl.h"
 
-#define ESS9018_ADDR    0x90    // 设备地址
-#define I2C_TIMEOUT     0xFFFF  // 超时计数
+#define ESS9018_ADDR    0x90    // 设备地址 (写)
+#define ESS9018_ADDR_R  0x91    // 设备地址 (读)
 
 #define ES9018K2M_SYSTEM_SETTING                0x00
 #define ES9018K2M_INPUT_CONFIG                  0x01
@@ -42,6 +42,13 @@
 #define ES9018K2M_DPLL_RATIO2                   0x44
 #define ES9018K2M_DPLL_RATIO3                   0x45
 
+/* ================== 软件IIC引脚操作宏 ================== */
+#define IIC_SCL_H()  GPIO_SetBits(GPIOB, GPIO_Pin_6)
+#define IIC_SCL_L()  GPIO_ResetBits(GPIOB, GPIO_Pin_6)
+#define IIC_SDA_H()  GPIO_SetBits(GPIOB, GPIO_Pin_7)
+#define IIC_SDA_L()  GPIO_ResetBits(GPIOB, GPIO_Pin_7)
+#define IIC_SDA_READ() GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_7)
+
 /* ================== 私有全局变量 ================== */
 static ES9018_State_t  s_es9018_state = {0};
 static ES9018_Config_t s_es9018_config_new = {0,0,104,2,0,0,0,0,0,5,0,1,5,1,0,0,0,0};
@@ -60,134 +67,198 @@ static void IIC_unlock(void)
     xSemaphoreGive(xIICMutex);
 }
 
+/* 软件IIC微秒级延时 (适配STM32F4 168MHz主频) */
+static void IIC_Delay(void)
+{
+    __IO uint32_t i = 30; // 适当调整，确保I2C速率在400KHz以内
+    while(i--);
+}
+
 static void I2C1_Init(void) 
 {
     if(xIICMutex == NULL) {
         xIICMutex = xSemaphoreCreateMutex();
     }
     
-    
     GPIO_InitTypeDef GPIO_InitStruct;
-    I2C_InitTypeDef I2C_InitStruct;
 
-    // 1. 使能时钟
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_I2C1, ENABLE);
+    // 1. 使能时钟 (只需要GPIO时钟)
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 
-    // 2. 配置GPIO引脚（PB6: SCL, PB7: SDA）
+    // 2. 配置GPIO引脚（PB6: SCL, PB7: SDA）为开漏输出
+    // 开漏输出模式下，输出1时引脚由外部/内部上拉电阻拉高，此时也可直接读取引脚电平
     GPIO_InitStruct.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
-    GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;          // 复用模式
-    GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;        // 开漏输出
-    GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_UP;          // 上拉电阻
-    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_100MHz;
+    GPIO_InitStruct.GPIO_Mode = GPIO_Mode_OUT;         // 普通输出模式
+    GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;        // 必须为开漏输出
+    GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_UP;          // 开启内部上拉
+    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    // 设置复用功能为I2C1
-    GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_I2C1);
-    GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_I2C1);
+    // 释放总线
+    IIC_SCL_H();
+    IIC_SDA_H();
+}
 
-    // 3. 配置I2C参数
-	I2C_DeInit(I2C1); 
-    I2C_SoftwareResetCmd(I2C1, ENABLE);
-    I2C_SoftwareResetCmd(I2C1, DISABLE);
-	
-    I2C_InitStruct.I2C_ClockSpeed = 400000;           // 100kHz
-    I2C_InitStruct.I2C_Mode = I2C_Mode_I2C;           // I2C模式
-    I2C_InitStruct.I2C_DutyCycle = I2C_DutyCycle_2;   // Tlow/Thigh = 2
-    I2C_InitStruct.I2C_OwnAddress1 = 0x00;            // 设备自身地址（7位）
-    I2C_InitStruct.I2C_Ack = I2C_Ack_Enable;          // 应答使能
-    I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit; // 7位地址模式
-    I2C_Init(I2C1, &I2C_InitStruct);
+static void IIC_Start(void)
+{
+    IIC_SDA_H();
+    IIC_SCL_H();
+    IIC_Delay();
+    IIC_SDA_L();  // SCL为高时，SDA由高变低产生起始信号
+    IIC_Delay();
+    IIC_SCL_L();  // 钳住I2C总线，准备发送或接收数据
+}
 
-    // 4. 使能I2C1
-    I2C_Cmd(I2C1, ENABLE);
+static void IIC_Stop(void)
+{
+    IIC_SDA_L();
+    IIC_SCL_L();
+    IIC_Delay();
+    IIC_SCL_H();
+    IIC_Delay();
+    IIC_SDA_H();  // SCL为高时，SDA由低变高产生停止信号
+    IIC_Delay();
+}
+
+static uint8_t IIC_Wait_Ack(void)
+{
+    uint8_t errTime = 0;
+    
+    IIC_SDA_H();  // 主机释放SDA线
+    IIC_Delay();
+    IIC_SCL_H();
+    IIC_Delay();
+    
+    while(IIC_SDA_READ())
+    {
+        errTime++;
+        if(errTime > 250)
+        {
+            IIC_Stop();
+            return 1; // 接收应答失败
+        }
+    }
+    IIC_SCL_L(); // 时钟输出0
+    return 0;    // 接收应答成功
+}
+
+static void IIC_Ack(void)
+{
+    IIC_SCL_L();
+    IIC_SDA_L(); // SDA拉低，发出ACK
+    IIC_Delay();
+    IIC_SCL_H();
+    IIC_Delay();
+    IIC_SCL_L();
+}
+
+static void IIC_NAck(void)
+{
+    IIC_SCL_L();
+    IIC_SDA_H(); // SDA拉高，发出NACK (这是解决硬件I2C读单字节BUG的关键)
+    IIC_Delay();
+    IIC_SCL_H();
+    IIC_Delay();
+    IIC_SCL_L();
+}
+
+static void IIC_Send_Byte(uint8_t txData)
+{                        
+    uint8_t t;   
+    IIC_SCL_L(); // 拉低时钟开始数据传输
+    for(t = 0; t < 8; t++)
+    {              
+        if((txData & 0x80) >> 7)
+            IIC_SDA_H();
+        else
+            IIC_SDA_L();
+        txData <<= 1; 	  
+        IIC_Delay();
+        IIC_SCL_H();
+        IIC_Delay();
+        IIC_SCL_L();
+        IIC_Delay();
+    }
+}
+
+static uint8_t IIC_Read_Byte(void)
+{
+    uint8_t i, receive = 0;
+    IIC_SDA_H(); // 切换为输入前释放数据线
+    for(i = 0; i < 8; i++)
+    {
+        IIC_SCL_L();
+        IIC_Delay();
+        IIC_SCL_H();
+        receive <<= 1;
+        if(IIC_SDA_READ()) receive++;   
+        IIC_Delay(); 
+    }
+    return receive;
 }
 
 static uint8_t I2C_Write_ES9018(uint8_t regAddr, uint8_t data) 
 {
     IIC_lock();
-    uint8_t res = ES9018_OK;
-    uint32_t timeout = I2C_TIMEOUT;
     
-    I2C_GenerateSTART(I2C1, ENABLE);
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_MODE_SELECT)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_START; goto err_exit; }
+    IIC_Start();
+    IIC_Send_Byte(ESS9018_ADDR); // 发送设备写地址
+    if(IIC_Wait_Ack()) {
+        IIC_unlock();
+        return ES9018_ERR_I2C_ADDR;
     }
-
-    I2C_Send7bitAddress(I2C1, ESS9018_ADDR, I2C_Direction_Transmitter);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_ADDR; goto err_exit; }
+    
+    IIC_Send_Byte(regAddr);      // 发送寄存器地址
+    if(IIC_Wait_Ack()) {
+        IIC_Stop();
+        IIC_unlock();
+        return ES9018_ERR_I2C_TX_REG;
     }
-
-    I2C_SendData(I2C1, regAddr);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_TX_REG; goto err_exit; }
+    
+    IIC_Send_Byte(data);         // 发送数据
+    if(IIC_Wait_Ack()) {
+        IIC_Stop();
+        IIC_unlock();
+        return ES9018_ERR_I2C_TX_DATA;
     }
-
-    I2C_SendData(I2C1, data);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_TX_DATA; goto err_exit; }
-    }
-
-err_exit:
-    I2C_GenerateSTOP(I2C1, ENABLE); 
+    
+    IIC_Stop();
     IIC_unlock();
-    return res;
+    return ES9018_OK;
 }
 
 static uint8_t I2C_Read_ES9018(uint8_t regAddr, uint8_t *pData) 
 {
     IIC_lock(); 
-    uint8_t res = ES9018_OK;
-    uint32_t timeout = I2C_TIMEOUT;
-
-    I2C_GenerateSTART(I2C1, ENABLE);
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_MODE_SELECT)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_START; goto err_exit; }
+    
+    IIC_Start();
+    IIC_Send_Byte(ESS9018_ADDR); // 发送设备写地址
+    if(IIC_Wait_Ack()) {
+        IIC_unlock();
+        return ES9018_ERR_I2C_ADDR;
     }
-
-    I2C_Send7bitAddress(I2C1, ESS9018_ADDR, I2C_Direction_Transmitter);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_ADDR; goto err_exit; }
+    
+    IIC_Send_Byte(regAddr);      // 发送寄存器地址
+    if(IIC_Wait_Ack()) {
+        IIC_Stop();
+        IIC_unlock();
+        return ES9018_ERR_I2C_TX_REG;
     }
-
-    I2C_SendData(I2C1, regAddr);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_TRANSMITTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_TX_REG; goto err_exit; }
+    
+    IIC_Start();                 // Restart 信号
+    IIC_Send_Byte(ESS9018_ADDR_R); // 发送设备读地址 (0x91)
+    if(IIC_Wait_Ack()) {
+        IIC_Stop();
+        IIC_unlock();
+        return ES9018_ERR_I2C_RX_MODE;
     }
-
-    I2C_GenerateSTART(I2C1, ENABLE);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_MODE_SELECT)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_RESTART; goto err_exit; }
-    }
-
-    I2C_Send7bitAddress(I2C1, ESS9018_ADDR, I2C_Direction_Receiver);
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_RX_MODE; goto err_exit; }
-    }
-
-    I2C_AcknowledgeConfig(I2C1, DISABLE);
-    I2C_NACKPositionConfig(I2C1, I2C_NACKPosition_Current);
-
-    timeout = I2C_TIMEOUT;
-    while (!I2C_CheckEvent(I2C1, I2C_EVENT_MASTER_BYTE_RECEIVED)) {
-        if (--timeout == 0) { res = ES9018_ERR_I2C_RX_DATA; goto err_exit; }
-    }
-
-    *pData = I2C_ReceiveData(I2C1);
-
-err_exit:
-    I2C_GenerateSTOP(I2C1, ENABLE);
-    I2C_AcknowledgeConfig(I2C1, ENABLE); 
+    
+    *pData = IIC_Read_Byte();    // 接收1个字节
+    IIC_NAck();                  // 读取完成后发送 NACK 信号
+    IIC_Stop();                  // 产生停止信号
+    
     IIC_unlock();
-    return res;
+    return ES9018_OK;
 }
 
 static void ES9018_GPIO_Init(void)
@@ -421,7 +492,7 @@ uint8_t ES9018_Init(void)
         g_es9018_inited = 1;
 		
 		ES9018_Set_BitDepth(music_bitdepth);
-		ES9018_Set_Volume(g_hdp_value,g_hdp_value);
+		ES9018_Set_Volume(kv_hdp_value,kv_hdp_value);
         ES9018_Reg4_Set_AutoMute_Time(s_es9018_config_new.Automute_Time);
         ES9018_Reg5_Set_AutoMute_Level(s_es9018_config_new.Enable_Loopback, s_es9018_config_new.Automute_Level);
         ES9018_Reg6_DeEmphasis(s_es9018_config_new.Vol_Rate);
@@ -442,7 +513,7 @@ uint8_t ES9018_Init(void)
 	{
 		g_es9018_inited = 0;
 		Headphone_Power_Ctrl(0);
-	}
+    }
     
     return res;
 }

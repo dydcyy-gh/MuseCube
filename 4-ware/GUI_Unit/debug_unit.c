@@ -9,13 +9,14 @@
 #include "page_manager.h"
 #include "variables.h"
 #include "debug.h"
+#include "kvdb_ctrl.h"
 
 // 日志配置参数
 #define MAX_LOG_LINES 52
-#define MAX_LOG_LEN   128
+#define MAX_LOG_LEN   256
 
 static lv_obj_t *log_cont = NULL;
-static lv_obj_t *log_labels[MAX_LOG_LINES] = {NULL};
+static lv_obj_t **log_labels = NULL;
 
 static char (*log_buffer)[MAX_LOG_LEN] = NULL;
 
@@ -27,7 +28,8 @@ volatile uint8_t tsdb_lvgl_need_dump = 0;
 
 static void btn_back_event_cb(lv_event_t * e)
 {
-    debug_mode = Debug_Mode_None;
+    kv_debug_mode = Debug_Mode_None;
+    kvdb_persist_mark(KV_IDX_kv_debug_mode);
     Page_Request_Switch(PAGE_LOG_CTRL);
 }
 
@@ -35,10 +37,13 @@ void Create_Debug_Unit(void)
 {
     if (log_cont != NULL) return;
 
+    if (log_labels == NULL) {
+        log_labels = malloc_ccm(MAX_LOG_LINES * sizeof(lv_obj_t *));
+    }
     if (log_buffer == NULL) {
         log_buffer = malloc_ccm(MAX_LOG_LINES * MAX_LOG_LEN);
     }
-    if (log_buffer == NULL) {
+    if (log_labels == NULL || log_buffer == NULL) {
         Remove_Debug_Unit();
         return;
     }
@@ -95,7 +100,7 @@ void Create_Debug_Unit(void)
 
     if (tsdb_lvgl_need_dump) {
         tsdb_lvgl_need_dump = 0;
-        Debug_Dump_TSDB_To_LVGL(50);
+        Debug_Dump_TSDB_To_LVGL(30);
     }
 }
 
@@ -129,7 +134,14 @@ void Remove_Debug_Unit(void)
     if (log_cont != NULL) {
         lv_obj_del(log_cont);
         log_cont = NULL;
-        memset(log_labels, 0, sizeof(log_labels));
+        if (log_labels != NULL) {
+            memset(log_labels, 0, MAX_LOG_LINES * sizeof(lv_obj_t *));
+        }
+    }
+
+    if (log_labels != NULL) {
+        free_ccm(log_labels);
+        log_labels = NULL;
     }
 
     if (log_buffer != NULL) {
@@ -138,34 +150,51 @@ void Remove_Debug_Unit(void)
     }
 }
 
+// 将一行文本写入环形缓冲区
+static void lvgl_log_write_line(const char *line)
+{
+    strncpy(log_buffer[log_head], line, MAX_LOG_LEN - 1);
+    log_buffer[log_head][MAX_LOG_LEN - 1] = '\0';
+    log_head = (log_head + 1) % MAX_LOG_LINES;
+    if (log_count < MAX_LOG_LINES) log_count++;
+}
+
 void lvgl_printf(const char *format, ...)
 {
     if (log_cont == NULL || log_buffer == NULL) return;
     if (__get_IPSR() != 0) return;
 
-    char buf[128];
-    va_list args;
+    char buf[MAX_LOG_LEN];
 
+    va_list args;
     va_start(args, format);
-    int len = vsnprintf(buf, sizeof(buf) - 2, format, args);
+    int len = vsnprintf(buf, sizeof(buf) - 1, format, args);
     va_end(args);
 
     if (len <= 0) return;
 
-    if (len >= sizeof(buf) - 2) len = sizeof(buf) - 3;
-
-    for (int i = 0; i < len; i++) {
-        if (buf[i] == '\r' || buf[i] == '\n') buf[i] = ' ';
-    }
-
-    buf[len++] = '\n';
+    if (len >= sizeof(buf) - 1) len = sizeof(buf) - 1;
     buf[len] = '\0';
 
-    strncpy(log_buffer[log_head], buf, MAX_LOG_LEN - 1);
-    log_buffer[log_head][MAX_LOG_LEN - 1] = '\0';
+    // 压缩掉 \r，按 \n 拆分为多行
+    int w = 0;
+    for (int i = 0; i < len; i++) {
+        if (buf[i] != '\r') buf[w++] = buf[i];
+    }
+    len = w;
+    buf[len] = '\0';
 
-    log_head = (log_head + 1) % MAX_LOG_LINES;
-    if (log_count < MAX_LOG_LINES) log_count++;
-
+    int line_start = 0;
+    for (int i = 0; i <= len; i++) {
+        if (buf[i] == '\n' || buf[i] == '\0') {
+            buf[i] = '\0';
+            if (i > line_start) {
+                lvgl_log_write_line(&buf[line_start]);
+            }
+            line_start = i + 1;
+            if (buf[i] == '\0') break;
+        }
+    }
     need_update = 1;
 }
+

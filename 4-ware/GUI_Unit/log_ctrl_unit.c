@@ -4,6 +4,7 @@
 #include "variables.h"
 #include "page_manager.h"
 #include "malloc.h"
+#include "kvdb_ctrl.h"
 
 // --- 状态结构体 ---
 typedef struct {
@@ -20,9 +21,16 @@ typedef struct {
 	lv_style_t style_btn_base;
 	lv_style_t style_btn_checked;
 	lv_style_t style_btn_disabled;
+
+	uint8_t  dump_state;
 } log_state_t;
 
 static log_state_t *ls = NULL;
+
+static bool is_usb_device_connected(void)
+{
+    return (g_usb_status == TYPEC_AC_OKEY || g_usb_status == TYPEC_CC_OKEY);
+}
 
 // 内部函数声明
 static void update_all_buttons_state(void);
@@ -64,8 +72,8 @@ void Create_Log_Control(void)
 
 	init_custom_styles();
 
-	if (debug_mode != Debug_Mode_None) {
-		ls->selected_active_mode = debug_mode;
+	if (kv_debug_mode != Debug_Mode_None) {
+		ls->selected_active_mode = kv_debug_mode;
 	} else {
 		ls->selected_active_mode = Debug_Mode_None;
 	}
@@ -93,7 +101,7 @@ void Create_Log_Control(void)
 	lv_obj_set_style_shadow_width(ls->sw_debug, 0, LV_PART_KNOB);
 	lv_obj_set_style_radius(ls->sw_debug, 4, LV_PART_KNOB);
 
-	if (debug_mode != Debug_Mode_None) {
+	if (kv_debug_mode != Debug_Mode_None) {
 		lv_obj_add_state(ls->sw_debug, LV_STATE_CHECKED);
 	}
 	lv_obj_add_event_cb(ls->sw_debug, sw_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -150,7 +158,7 @@ void Create_Log_Control(void)
 	lv_obj_add_style(ls->btn_dump_usb, &ls->style_btn_disabled, LV_STATE_DISABLED);
 	lv_obj_align(ls->btn_dump_usb, LV_ALIGN_TOP_LEFT, 20, 140);
 	lv_obj_t * label_dump_usb = lv_label_create(ls->btn_dump_usb);
-	lv_label_set_text(label_dump_usb, "Dump USB");
+	lv_label_set_text(label_dump_usb, "Open USB");
 	lv_obj_center(label_dump_usb);
 	lv_obj_add_event_cb(ls->btn_dump_usb, dump_usb_event_cb, LV_EVENT_CLICKED, NULL);
 
@@ -169,11 +177,24 @@ void Create_Log_Control(void)
 
 void Update_Log_Control(void)
 {
+	if (ls == NULL) return;
+
+	update_all_buttons_state();
+
+	if (ls->dump_state == 1 && g_usb_function != USBD_LOG) {
+		ls->dump_state = 0;
+		lv_obj_t * label = lv_obj_get_child(ls->btn_dump_usb, 0);
+		if (label) lv_label_set_text(label, "Open USB");
+	}
 }
 
 void Remove_Log_Control(void)
 {
 	if (ls == NULL) return;
+
+	if (ls->dump_state == 1 && g_usb_function == USBD_LOG) {
+		g_usb_function = USB_NONE;
+	}
 
 	if (ls->ctrl_cont != NULL) {
 		lv_obj_del(ls->ctrl_cont);
@@ -188,7 +209,11 @@ void Remove_Log_Control(void)
 static void update_all_buttons_state(void)
 {
 	if (!lv_obj_has_state(ls->sw_debug, LV_STATE_CHECKED)) {
-		lv_obj_clear_state(ls->btn_dump_usb, LV_STATE_DISABLED);
+		if (is_usb_device_connected()) {
+			lv_obj_clear_state(ls->btn_dump_usb, LV_STATE_DISABLED);
+		} else {
+			lv_obj_add_state(ls->btn_dump_usb, LV_STATE_DISABLED);
+		}
 		lv_obj_clear_state(ls->btn_dump_lvgl, LV_STATE_DISABLED);
 
 		lv_obj_add_state(ls->btn_mode_tsdb, LV_STATE_DISABLED);
@@ -199,7 +224,11 @@ static void update_all_buttons_state(void)
 		lv_obj_add_state(ls->btn_dump_lvgl, LV_STATE_DISABLED);
 
 		lv_obj_clear_state(ls->btn_mode_tsdb, LV_STATE_DISABLED);
-		lv_obj_clear_state(ls->btn_mode_usb, LV_STATE_DISABLED);
+		if (is_usb_device_connected()) {
+			lv_obj_clear_state(ls->btn_mode_usb, LV_STATE_DISABLED);
+		} else {
+			lv_obj_add_state(ls->btn_mode_usb, LV_STATE_DISABLED);
+		}
 		lv_obj_clear_state(ls->btn_mode_lvgl, LV_STATE_DISABLED);
 	}
 }
@@ -223,12 +252,23 @@ static void sw_event_cb(lv_event_t * e)
 {
 	lv_obj_t * sw = lv_event_get_target(e);
 	if (lv_obj_has_state(sw, LV_STATE_CHECKED)) {
-		ls->selected_active_mode = Debug_Mode_None;
-		debug_mode = Debug_Mode_None;
+		if (ls->dump_state == 1) {
+			g_usb_function = USB_NONE;
+			ls->dump_state = 0;
+			lv_obj_t * label = lv_obj_get_child(ls->btn_dump_usb, 0);
+			if (label) lv_label_set_text(label, "Open USB");
+		}
+		kv_debug_mode = ls->selected_active_mode;
+		if (kv_debug_mode == Debug_Mode_USBD && g_usb_function != USBD_LOG) {
+			g_usb_function = USBD_LOG;
+		}
 	} else {
-		ls->selected_active_mode = Debug_Mode_None;
-		debug_mode = Debug_Mode_None;
+		if (g_usb_function == USBD_LOG) {
+			g_usb_function = USB_NONE;
+		}
+		kv_debug_mode = Debug_Mode_None;
 	}
+	kvdb_persist_mark(KV_IDX_kv_debug_mode);
 
 	update_all_buttons_state();
 	update_mode_buttons_ui();
@@ -242,9 +282,18 @@ static void mode_btn_event_cb(lv_event_t * e)
 	update_mode_buttons_ui();
 
 	if (lv_obj_has_state(ls->sw_debug, LV_STATE_CHECKED)) {
-		debug_mode = ls->selected_active_mode;
+		if (mode_val != Debug_Mode_USBD && g_usb_function == USBD_LOG) {
+			g_usb_function = USB_NONE;
+		}
 
-		if (debug_mode == Debug_Mode_LVGL) {
+		kv_debug_mode = ls->selected_active_mode;
+		kvdb_persist_mark(KV_IDX_kv_debug_mode);
+
+		if (mode_val == Debug_Mode_USBD) {
+			g_usb_function = USBD_LOG;
+		}
+
+		if (kv_debug_mode == Debug_Mode_LVGL) {
 			Page_Request_Switch(PAGE_DEBUG);
 		}
 	}
@@ -252,7 +301,17 @@ static void mode_btn_event_cb(lv_event_t * e)
 
 static void dump_usb_event_cb(lv_event_t * e)
 {
-	Debug_Dump_TSDB_To_USB(50);
+	lv_obj_t * label = lv_obj_get_child(ls->btn_dump_usb, 0);
+	if (ls->dump_state == 0) {
+		g_usb_function = USBD_LOG;
+		ls->dump_state = 1;
+		if (label) lv_label_set_text(label, "Dump USB");
+	} else {
+		Debug_Dump_TSDB_To_USB(30);
+		g_usb_function = USB_NONE;
+		ls->dump_state = 0;
+		if (label) lv_label_set_text(label, "Open USB");
+	}
 }
 
 extern volatile int tsdb_lvgl_need_dump;

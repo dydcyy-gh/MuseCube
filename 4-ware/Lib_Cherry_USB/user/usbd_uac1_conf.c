@@ -17,8 +17,8 @@
 
 #define USING_FEEDBACK 1
 
-#define USBD_VID           0xffff
-#define USBD_PID           0xffff
+#define USBD_VID           0xFFFF
+#define USBD_PID           0xFFFF
 #define USBD_MAX_POWER     100
 #define USBD_LANGID_STRING 1033
 
@@ -30,8 +30,8 @@
 #define FEEDBACK_ENDP_PACKET_SIZE 0x03
 #endif
 
-#define AUDIO_OUT_EP 0x02
-#define AUDIO_OUT_FEEDBACK_EP 0x83
+#define AUDIO_OUT_EP 0x01
+#define AUDIO_OUT_FEEDBACK_EP 0x82
 	
 #define AUDIO_OUT_FU_ID 0x05
 
@@ -185,10 +185,22 @@ volatile static bool dma_started = false;  // DMA是否已启动
 volatile static uint32_t free_read_data = 0;
 volatile static uint32_t free_write_data = 0;
 
-void uac1_play_song_task(void) 
+void uac1_play_song_task(void)
 {
-	if (xSemaphoreTake(xI2SSemaphore, pdMS_TO_TICKS(100)) != pdTRUE) {
+    // 增加状态判断：如果主机尚未打开音频流，则退出并让出CPU
+    if (rx_flag == 0) {
+        vTaskDelay(pdMS_TO_TICKS(10));
         return; 
+    }
+
+    // 增加信号量非空判断（双重保险），防止卡死在底层断言
+    if (xI2SSemaphore == NULL) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        return;
+    }
+
+	if (xSemaphoreTake(xI2SSemaphore, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return;
     }
 	
 	// 计算环形缓冲区中可用数据量
@@ -299,10 +311,13 @@ void usbd_audiov1_close(uint8_t busid, uint8_t intf)
 {
     rx_flag = 0;
 	I2S_Play_Stop();
-	if(uac1_audio_ring_buf) free_bsc(uac1_audio_ring_buf);
-	if(uac1_dma_buf0) free_bsc(uac1_dma_buf0);
-	if(uac1_dma_buf1) free_bsc(uac1_dma_buf1);
-	if(uac1_usb_buf)  free_bsc(uac1_usb_buf);
+    dma_started = false; // 复位DMA状态
+    
+	if(uac1_audio_ring_buf) { free_bsc(uac1_audio_ring_buf); uac1_audio_ring_buf = NULL; }
+	if(uac1_dma_buf0) { free_bsc(uac1_dma_buf0); uac1_dma_buf0 = NULL; }
+	if(uac1_dma_buf1) { free_bsc(uac1_dma_buf1); uac1_dma_buf1 = NULL; }
+	if(uac1_usb_buf)  { free_bsc(uac1_usb_buf); uac1_usb_buf = NULL; }
+    
     USB_LOG_RAW("CLOSE\r\n");
 }
 

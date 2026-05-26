@@ -44,17 +44,18 @@ void USB_Task( void * pvParameters )
 			{
 				switch(g_usb_function)
 				{
-					case USBD_CDC:  usbd_cdc_init(0,USB_OTG_HS_PERIPH_BASE);     	break;
-					case USBD_MSC:  usbd_msc_init(0,USB_OTG_HS_PERIPH_BASE);     	break;
-					case USBD_UAC1: audio_v1_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
-					case USBD_UAC2: audio_v2_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
-					case USBD_DISP: usb_display_init(0,USB_OTG_HS_PERIPH_BASE); 	break;
-					case USBD_GMPD: usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
-					case USBD_MOU:  usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
-					case USBD_KBD:  usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
-					case USBH_MSC:  usbh_msc_init(0,USB_OTG_HS_PERIPH_BASE); 		break;
-					case USBH_HID:  usbh_hid_init(0,USB_OTG_HS_PERIPH_BASE); 		break;
-					case USBH_CDC:  usbh_serial_init(0,USB_OTG_HS_PERIPH_BASE); 	break;
+					case USBD_LOG:       usbd_cdc_init(0, USB_OTG_HS_PERIPH_BASE);      break;
+					case USBD_CMD:       usbd_cdc_init(0, USB_OTG_HS_PERIPH_BASE);      break;
+					case USBD_MSC:  	 usbd_msc_init(0,USB_OTG_HS_PERIPH_BASE);       break;
+					case USBD_UAC1: 	 audio_v1_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
+					case USBD_UAC2: 	 audio_v2_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
+					case USBD_DISP: 	 usb_display_init(0,USB_OTG_HS_PERIPH_BASE); 	break;
+					case USBD_GMPD: 	 usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
+					case USBD_MOU:  	 usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
+					case USBD_KBD:  	 usbd_hid_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
+					case USBH_MSC:  	 usbh_msc_init(0,USB_OTG_HS_PERIPH_BASE); 		break;
+					case USBH_HID:  	 usbh_hid_init(0,USB_OTG_HS_PERIPH_BASE); 		break;
+					case USBH_CDC:    	 usbh_serial_init(0,USB_OTG_HS_PERIPH_BASE); 	break;
 					default: break;
 				}
 			}
@@ -63,17 +64,18 @@ void USB_Task( void * pvParameters )
 			{
 				switch(last_usb_function)
 				{
-					case USBD_CDC:  usbd_cdc_deinit();						    break;
-					case USBD_MSC:  usbd_msc_deinit();							break;
-					case USBD_UAC1: usbd_uac1_deinit();                         break;
-					case USBD_UAC2: usbd_uac2_deinit();                         break;
-					case USBD_DISP: usb_display_deinit(); 						break;
-					case USBD_GMPD: usbd_hid_deinit();						    break;
-					case USBD_MOU:  usbd_hid_deinit();	                        break;
-					case USBD_KBD:  usbd_hid_deinit();                          break;
-					case USBH_MSC:  usbh_msc_deinit();                          break;
-					case USBH_HID:  usbh_hid_deinit();							break;
-					case USBH_CDC:  usbh_serial_deinit(); 						break;
+					case USBD_LOG:       usbd_cdc_deinit();						    break;
+					case USBD_CMD:       usbd_cdc_deinit();						    break;
+					case USBD_MSC: 		 usbd_msc_deinit();							break;
+					case USBD_UAC1: 	 usbd_uac1_deinit();                        break;
+					case USBD_UAC2:	 	 usbd_uac2_deinit();                        break;
+					case USBD_DISP:		 usb_display_deinit(); 						break;
+					case USBD_GMPD:		 usbd_hid_deinit();						    break;
+					case USBD_MOU: 		 usbd_hid_deinit();	                        break;
+					case USBD_KBD:		 usbd_hid_deinit();                         break;
+					case USBH_MSC: 		 usbh_msc_deinit();                         break;
+					case USBH_HID: 		 usbh_hid_deinit();							break;
+					case USBH_CDC: 		 usbh_serial_deinit(); 						break;
 					default: break;
 				}
 			}
@@ -82,23 +84,25 @@ void USB_Task( void * pvParameters )
 			{
 				switch(last_usb_function)
 				{
-					case USBD_CDC:  usbd_cdc_deinit();							break;
-					case USBD_MSC:  usbd_msc_deinit();							break;
-					case USBD_UAC1: usbd_uac1_deinit();                         break;
-					case USBD_UAC2: usbd_uac2_deinit();                         break;
-					case USBD_DISP: usb_display_deinit(); 						break;
-					case USBD_GMPD: usbd_hid_deinit();							break;
-					case USBD_MOU:  usbd_hid_deinit();	                        break;
-					case USBD_KBD:  usbd_hid_deinit();                          break;
-					case USBH_MSC:  usbh_msc_deinit();                          break;
-					case USBH_HID:  usbh_hid_deinit();							break;
-					case USBH_CDC:  usbh_serial_deinit(); 						break;
+					case USBD_LOG:          usbd_cdc_deinit();						break;
+					case USBD_CMD:          usbd_cdc_deinit();						break;
+					case USBD_MSC:  	    usbd_msc_deinit();						break;
+					case USBD_UAC1: 		usbd_uac1_deinit();                     break;
+					case USBD_UAC2: 		usbd_uac2_deinit();                     break;
+					case USBD_DISP: 		usb_display_deinit(); 			        break;
+					case USBD_GMPD: 		usbd_hid_deinit();						break;
+					case USBD_MOU:  		usbd_hid_deinit();	                    break;
+					case USBD_KBD:  		usbd_hid_deinit();                      break;
+					case USBH_MSC:  		usbh_msc_deinit();                      break;
+					case USBH_HID:  		usbh_hid_deinit();						break;
+					case USBH_CDC:  		usbh_serial_deinit(); 					break;
 					default: break;
 				}
 				Delay_ms(300);
 				switch(g_usb_function)
 				{
-					case USBD_CDC:  usbd_cdc_init(0,USB_OTG_HS_PERIPH_BASE);     	break;
+					case USBD_LOG:  usbd_cdc_init(0,USB_OTG_HS_PERIPH_BASE);  		break;
+					case USBD_CMD:  usbd_cdc_init(0,USB_OTG_HS_PERIPH_BASE);  		break;
 					case USBD_MSC:  usbd_msc_init(0,USB_OTG_HS_PERIPH_BASE);     	break;
 					case USBD_UAC1: audio_v1_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
 					case USBD_UAC2: audio_v2_init(0,USB_OTG_HS_PERIPH_BASE);    	break;
@@ -117,7 +121,8 @@ void USB_Task( void * pvParameters )
 		// cherryusb功能运行保持原样 ...
 		switch(g_usb_function)
 		{
-			case USBD_CDC:  Delay_ms(20);         break;
+			case USBD_LOG:  usbd_cdc_cmd_task();  break;
+			case USBD_CMD:  usbd_cdc_cmd_task();  break;
 			case USBD_MSC:  usbd_msc_task();      break;
 			case USBD_UAC1: uac1_play_song_task();break;
 			case USBD_UAC2: uac2_play_song_task();break;

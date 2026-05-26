@@ -8,7 +8,7 @@
 void Create_Lots_Page(void)
 {
 	Create_Lots_Unit();
-	Create_Navigation_Bar("关于本机信息");
+	Create_Navigation_Bar("今日运势");
 	Create_Status_Bar();
 }
 

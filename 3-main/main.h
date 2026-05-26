@@ -31,6 +31,7 @@
 #include "lv_port_indev.h"
 #include "flashdb.h"
 #include "fal.h"
+#include "kvdb_ctrl.h"
 #include "task_manager.h"
 #include "usbd_hid_conf.h"
 #include "iwdg.h"

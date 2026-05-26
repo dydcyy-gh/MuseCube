@@ -17,93 +17,49 @@
 #include "semphr.h"
 #include "variables.h"
 
-#define SD_CARD	 0  // SD卡, 卷标为0
-#define USB_DISK 1  // U盘,  卷标为1
+// 修改开头的宏定义
+#define SD_CARD	 0  // SD卡, 卷标为 "0:"
+#define USB_DISK1 1 // U盘1, 卷标为 "1:"
+#define USB_DISK2 2 // U盘2, 卷标为 "2:"
 
 /*-----------------------------------------------------------------------*/
-/* Get Drive Status                                                      */
-/*-----------------------------------------------------------------------*/
-
-DSTATUS disk_status (
-	BYTE pdrv		/* Physical drive nmuber to identify the drive */
-)
+DSTATUS disk_status (BYTE pdrv)
 {
-	switch (pdrv) 
-	{
-		case SD_CARD :
-			return 0;
-	
-		case USB_DISK :
-			return 0;
-	}
-	return 0;
+	return 0; // 都不作限制
 }
 
 /*-----------------------------------------------------------------------*/
-/* Inidialize a Drive                                                    */
-/*-----------------------------------------------------------------------*/
-
-DSTATUS disk_initialize (
-	BYTE pdrv				/* Physical drive nmuber to identify the drive */
-)
+DSTATUS disk_initialize (BYTE pdrv)
 {
 	u8 res=0;	    
 	switch(pdrv)
 	{
-		case SD_CARD:		// SD卡
-			res = SD_Init();
-			break;
-		case USB_DISK:		// U盘
-			res = USB_disk_initialize();
-			break;
-		default:
-			res=1; 
+		case SD_CARD:   res = SD_Init(); break;
+		case USB_DISK1: res = USB_disk_initialize(0); break; // 传入ID 0
+		case USB_DISK2: res = USB_disk_initialize(1); break; // 传入ID 1
+		default: res=1; 
 	}		 
-	if(res) return 1;
-	else return 0;
+	return res ? 1 : 0;
 }
 
 /*-----------------------------------------------------------------------*/
-/* Read Sector(s)                                                        */
-/*-----------------------------------------------------------------------*/
-
-DRESULT disk_read (
-	BYTE pdrv,		/* Physical drive nmuber to identify the drive */
-	BYTE *buff,		/* Data buffer to store read data */
-	LBA_t sector,	/* Start sector in LBA */
-	UINT count		/* Number of sectors to read */
-)
+DRESULT disk_read (BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
 	u8 res=0; 
 	if (!count) return RES_PARERR;		 	 
 	switch(pdrv)
 	{
-		case SD_CARD:
-			res = SD_ReadDisk(buff, sector, count);	 
-			break;
-		case USB_DISK:
-			res = USB_disk_read(buff, sector, count);
-			break;
-		default:
-			res=1; 
+		case SD_CARD:   res = SD_ReadDisk(buff, sector, count); break;
+		case USB_DISK1: res = USB_disk_read(0, buff, sector, count); break;
+		case USB_DISK2: res = USB_disk_read(1, buff, sector, count); break;
+		default: res=1; 
 	}
-
-	if(res==0x00) return RES_OK;	 
-	else return RES_ERROR;	
+	return (res==0x00) ? RES_OK : RES_ERROR;	
 }
 
 /*-----------------------------------------------------------------------*/
-/* Write Sector(s)                                                       */
-/*-----------------------------------------------------------------------*/
-
 #if FF_FS_READONLY == 0
-
-DRESULT disk_write (
-	BYTE pdrv,			/* Physical drive nmuber to identify the drive */
-	const BYTE *buff,	/* Data to be written */
-	LBA_t sector,		/* Start sector in LBA */
-	UINT count			/* Number of sectors to write */
-)
+DRESULT disk_write (BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
 	u8 res=0;  
 	if (!count) return RES_PARERR;		 	 
@@ -111,64 +67,36 @@ DRESULT disk_write (
 	{
 		case SD_CARD:
 			res = SD_WriteDisk((u8*)buff, sector, count);
-			while(res)	// 写出错时重试
-			{
-				SD_Init();
-				res = SD_WriteDisk((u8*)buff, sector, count);	
-			}
+			while(res) { SD_Init(); res = SD_WriteDisk((u8*)buff, sector, count); }
 			break;
-		case USB_DISK:
-			res = USB_disk_write(buff, sector, count);
-			break;
-		default:
-			res=1; 
+		case USB_DISK1: res = USB_disk_write(0, buff, sector, count); break;
+		case USB_DISK2: res = USB_disk_write(1, buff, sector, count); break;
+		default: res=1; 
 	}
-	if(res == 0x00) return RES_OK;	 
-	else return RES_ERROR;	
+	return (res == 0x00) ? RES_OK : RES_ERROR;	
 }
-
 #endif
 
 /*-----------------------------------------------------------------------*/
-/* Miscellaneous Functions                                               */
-/*-----------------------------------------------------------------------*/
-
-DRESULT disk_ioctl (
-	BYTE pdrv,		/* Physical drive nmuber (0..) */
-	BYTE cmd,		/* Control code */
-	void *buff		/* Buffer to send/receive control data */
-)
+DRESULT disk_ioctl (BYTE pdrv, BYTE cmd, void *buff)
 {
 	uint8_t res;						  			     
 	if(pdrv == SD_CARD)
 	{
+        // 保持原样...
 		switch(cmd)
 		{
-			case CTRL_SYNC:
-				res = RES_OK; 
-				break;	 
-			case GET_SECTOR_SIZE:
-				*(uint32_t*)buff = 512; 
-				res = RES_OK;
-				break;	 
-			case GET_BLOCK_SIZE:
-				*(uint16_t*)buff = SDCardInfo.CardBlockSize;
-				res = RES_OK;
-				break;	 
-			case GET_SECTOR_COUNT:
-				*(uint32_t*)buff = SDCardInfo.CardCapacity / 512;
-				res = RES_OK;
-				break;
-			default:
-				res = RES_PARERR;
-				break;
+			case CTRL_SYNC: res = RES_OK; break;	 
+			case GET_SECTOR_SIZE: *(uint32_t*)buff = 512; res = RES_OK; break;	 
+			case GET_BLOCK_SIZE: *(uint16_t*)buff = SDCardInfo.CardBlockSize; res = RES_OK; break;	 
+			case GET_SECTOR_COUNT: *(uint32_t*)buff = SDCardInfo.CardCapacity / 512; res = RES_OK; break;
+			default: res = RES_PARERR; break;
 		}
 	}
-	else if(pdrv == USB_DISK)
-	{
-		res = USB_disk_ioctl(cmd, buff);
-	}
+	else if(pdrv == USB_DISK1) { res = USB_disk_ioctl(0, cmd, buff); }
+	else if(pdrv == USB_DISK2) { res = USB_disk_ioctl(1, cmd, buff); }
 	else res = RES_ERROR;
+    
 	return (DRESULT)res;
 }
 

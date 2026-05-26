@@ -252,8 +252,8 @@ void flac_play_song_task(uint8_t* fname)
 							int32_t sample = *src;
                             
                             // 软件音量缩放 (参考wav.c)
-                            if(g_hdp0_or_spk1) {
-                                sample = (int32_t)(((int64_t)sample * g_spk_value) >> 8);
+                            if(kv_hdp0_or_spk1) {
+                                sample = (int32_t)(((int64_t)sample * kv_spk_value) >> 8);
                             }
                             
                             // 数据位整理 (32bit ROR 16, 优化性能)
@@ -274,8 +274,8 @@ void flac_play_song_task(uint8_t* fname)
                             int32_t sample = p[i];
                             
                             // 软件音量缩放
-                            if(g_hdp0_or_spk1) {
-                                sample = (int32_t)(((int64_t)sample * g_spk_value) >> 8);
+                            if(kv_hdp0_or_spk1) {
+                                sample = (int32_t)(((int64_t)sample * kv_spk_value) >> 8);
                             }
                             
                             // 数据位整理 (32bit ROR 16)
@@ -329,9 +329,9 @@ void flac_play_song_task(uint8_t* fname)
         // 处理播放状态转换
         if(Music_Status == Song_Error) Music_Status = Music_Exit;
         if(Music_Status == Song_End) {
-            if(Music_Switch_Method == Play_In_Order) play_next_song();
-            if(Music_Switch_Method == Play_Randomly) play_random_song();
-            if(Music_Switch_Method == Play_Repeatly) play_same_song();
+            if(kv_music_switch_method == Play_In_Order) play_next_song();
+            if(kv_music_switch_method == Play_Randomly) play_random_song();
+            if(kv_music_switch_method == Play_Repeatly) play_same_song();
             Music_Status = Song_Prepare;
         }
         if(Music_Status == Song_Next) {

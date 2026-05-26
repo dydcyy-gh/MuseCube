@@ -6,13 +6,11 @@
 #include <math.h>
 #include <stdbool.h>
 #include "page_manager.h"
+#include "debug.h"
+#include "variables.h"
 
 #define HOR_RES      240  /* 屏幕宽度 */
 #define VER_RES      240  /* 屏幕高度 */
-
-extern volatile int16_t g_usb_mouse_dx;
-extern volatile int16_t g_usb_mouse_dy;
-extern volatile uint8_t g_usb_mouse_btn;
 
 static void mouse_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data);
 
@@ -28,46 +26,34 @@ static lv_indev_drv_t indev_drv;
 /* ======================== 智能上下文探测引擎 ============================== */
 /* ========================================================================= */
 
-// 递归寻找当前坐标下，最深层的可点击对象
 static lv_obj_t * get_clickable_obj_under_point(lv_obj_t * obj, lv_point_t * p) 
 {
-    if(lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return NULL; // 忽略隐藏对象
-    
-    // 边界检查：如果坐标不在本对象的物理包围���内，直接淘汰
+    if(lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return NULL; 
     if(p->x < obj->coords.x1 || p->x > obj->coords.x2 || 
        p->y < obj->coords.y1 || p->y > obj->coords.y2) {
         return NULL;
     }
-    
-    // 递归检查子对象 (倒序遍历，因为后添加的 UI 在最上层)
     uint32_t child_cnt = lv_obj_get_child_cnt(obj);
     for(int32_t i = child_cnt - 1; i >= 0; i--) {
         lv_obj_t * child = lv_obj_get_child(obj, i);
         lv_obj_t * res = get_clickable_obj_under_point(child, p);
-        if(res != NULL) return res; // 如果命中子对象，直接返回
+        if(res != NULL) return res; 
     }
-    
-    // 如果子对象没命中，且本对象是可点击的，则返回本对象
     if(lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE)) {
         return obj;
     }
-    
     return NULL;
 }
 
-// 核心判断：当前坐标点击下去，最终会不会触发滚动？
 static bool check_is_scrollable(lv_coord_t x, lv_coord_t y) 
 {
     lv_point_t p = {x, y};
     lv_obj_t * target = NULL;
     
-    // 按系统层级从上到下透视检索（跳过鼠标小黑点，因为它没有 CLICKABLE 标志）
     target = get_clickable_obj_under_point(lv_layer_sys(), &p);
     if(!target) target = get_clickable_obj_under_point(lv_layer_top(), &p);
     if(!target) target = get_clickable_obj_under_point(lv_scr_act(), &p);
     
-    // 如果找到了目标对象，沿父节点向上追溯（LVGL 的事件冒泡机制）
-    // 只要有任何一个父容器是可滚动的，那么当前手势就会变成滚动！
     while(target != NULL) {
         if(lv_obj_has_flag(target, LV_OBJ_FLAG_SCROLLABLE)) {
             return true;
@@ -93,20 +79,35 @@ void lv_port_indev_init(void)
 	lv_obj_set_style_border_width(mouse_cursor, 1, 0);  
 	lv_obj_set_style_border_color(mouse_cursor, lv_color_black(), 0); 
 	
-	/* 极度重要：小黑点绝对不能拦截点击事件 */
 	lv_obj_clear_flag(mouse_cursor, LV_OBJ_FLAG_CLICKABLE); 
 }
 
 static void mouse_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
 {
-    /* --------- 1. 读取并清空 USB 鼠标数据 --------- */
+    if (g_lvgl_input_disabled) 
+	{
+		static uint8_t last_R = 0;
+        if (last_R && !g_key_R_M_RT) 
+		{
+            g_lvgl_input_disabled = 0;
+			last_R = 0;
+        } 
+		else 
+		{
+			last_R = g_key_R_M_RT;
+            data->state = LV_INDEV_STATE_REL;
+            return;
+        }
+    }
+	
     int16_t usb_dx = g_usb_mouse_dx; g_usb_mouse_dx = 0;
     int16_t usb_dy = g_usb_mouse_dy; g_usb_mouse_dy = 0;
     uint8_t usb_btn = g_usb_mouse_btn;
 
-    /* --------- 2. 右摇杆：永远控制绝对坐标 --------- */
-    float move_x = (g_key_R_X * 0.06f) + usb_dx;
-    float move_y = -(g_key_R_Y * 0.06f) + usb_dy; 
+    /* --------- 2. 右摇杆：融合板载ADC与USB手柄 --------- */
+    // 注意 move_y 是 -(Y轴)，因为屏幕坐标系的 y 向下是递增的
+    float move_x = (g_key_R_X * 0.06f) + (g_usb_joy_R_X * 0.06f) + usb_dx;
+    float move_y = -(g_key_R_Y * 0.06f) - (g_usb_joy_R_Y * 0.06f) + usb_dy; 
 
     cursor_x += move_x;
     cursor_y += move_y;
@@ -116,28 +117,33 @@ static void mouse_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
     if(cursor_x > HOR_RES - 1) cursor_x = HOR_RES - 1;
     if(cursor_y > VER_RES - 1) cursor_y = VER_RES - 1;
 
-    /* --------- 3. 左摇杆：智能感知上下文 (核心魔法) --------- */
+    /* --------- 3. 左摇杆：融合板载ADC与USB手柄 --------- */
+    int16_t combined_L_X = g_key_L_X + g_usb_joy_L_X;
+    int16_t combined_L_Y = g_key_L_Y + g_usb_joy_L_Y;
+    
+    // 防止两个摇杆同时推到最大导致溢出 (-128 ~ 127)
+    if(combined_L_X > 127) combined_L_X = 127;
+    if(combined_L_X < -128) combined_L_X = -128;
+    if(combined_L_Y > 127) combined_L_Y = 127;
+    if(combined_L_Y < -128) combined_L_Y = -128;
+
     static float virtual_drag_x = 0;
     static float virtual_drag_y = 0;
     static bool last_is_pressed = false; 
-    static bool is_scroll_mode = false; // 锁定当前拨动的“模式”
+    static bool is_scroll_mode = false; 
     
-    bool left_joy_active = (g_key_L_X > 80 || g_key_L_X < -80 || g_key_L_Y > 80 || g_key_L_Y < -80);
+    bool left_joy_active = (combined_L_X > 80 || combined_L_X < -80 || combined_L_Y > 80 || combined_L_Y < -80);
     bool is_pressed = left_joy_active || (usb_btn & 0x01);
 
-    // 【核心逻辑】：在按下的第一帧，感知脚下的土地
     if (is_pressed && !last_is_pressed) {
         is_scroll_mode = check_is_scrollable((lv_coord_t)cursor_x, (lv_coord_t)cursor_y);
     }
 
     if (left_joy_active) {
         if (is_scroll_mode) {
-            // 是滚动区域：允许坐标累加，触发拖拽/滚动
-            virtual_drag_x += (g_key_L_X * 0.06f);
-            virtual_drag_y += (g_key_L_Y * 0.06f); 
+            virtual_drag_x += (combined_L_X * 0.08f);
+            virtual_drag_y += (combined_L_Y * 0.08f); 
         }
-        // 如果不是滚动区域，什么都不做！virtual_drag 死死钉在 0 上！
-        // 此时拨动左摇杆，只会产生完美的“原位按下”！
     } else {
         if (!last_is_pressed) {
             virtual_drag_x = 0;
@@ -145,14 +151,20 @@ static void mouse_read(lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
         }
     }
 	
-	/* --------- 4. 左右摇杆按键     --------- */
+	/* --------- 4. 左右摇杆按键 --------- */
 	static uint8_t last_L = 0;
-	
 	if(!g_key_L_M_RT && last_L)
 	{
-		//Page_Back();
+		Page_Back();
 	}
 	last_L = g_key_L_M_RT;
+	
+	static uint8_t last_M = 0;
+	if(!g_key_WKP_RT && last_M)
+	{
+		debug_printf("hello world\n");
+	}
+	last_M = g_key_WKP_RT;
 	
     /* --------- 5. 提交给 LVGL 底层 --------- */
     data->point.x = (lv_coord_t)(cursor_x + virtual_drag_x);

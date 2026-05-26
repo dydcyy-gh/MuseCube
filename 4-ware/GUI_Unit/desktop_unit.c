@@ -53,6 +53,7 @@ static void app_icon_event_cb(lv_event_t * e)
 			case 13: Page_Request_Switch(PAGE_CMD);break;
 			case 14: Page_Request_Switch(PAGE_LOTS);break;
 			case 15: Page_Request_Switch(PAGE_ALBUM);break;
+			case 16: Page_Request_Switch(PAGE_SERIAL);break;
 			default: break; 
         }
     }
@@ -113,6 +114,7 @@ void Create_Desktop_Unit(void)
 		&app_cmd,          // 13: app_cmd
 		&app_lots,         // 14: app_lots
 		&app_album,         // 15: app_album
+			&app_cmd,           // 16: PAGE_SERIAL (TODO: replace with app_serial icon)
     };
     int max_app_count = sizeof(app_icons) / sizeof(app_icons[0]);
 

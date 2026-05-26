@@ -14,7 +14,7 @@
 // 全局及通用定义
 // ==========================================
 #define GAMEPAD_IN_EP  0x81
-#define GAMEPAD_OUT_EP 0x02
+#define GAMEPAD_OUT_EP 0x01  // 从 0x02 改为 0x01
 
 #define MOUSE_IN_EP           0x81
 #define MOUSE_INT_EP_SIZE     4
@@ -25,11 +25,6 @@
 #define KBD_INT_EP_INTERVAL   10
 
 #define USBD_MAX_POWER 500
-
-// --- LVGL 键盘与 USB 任务通信的全局变量 ---
-volatile uint8_t g_usb_kbd_modifier = 0; // Shift, Ctrl, Alt 等修饰键
-volatile uint8_t g_usb_kbd_key = 0;      // 实际的键码 (Keycode)
-volatile uint8_t g_usb_kbd_trigger = 0;  // 状态机：0=空闲, 1=请求按下, 2=请求松开
 
 // ==========================================
 // 手柄描述符定义 (XInput)
@@ -60,8 +55,8 @@ const struct usb_descriptor gamepad_descriptor = {
 // ==========================================
 // 鼠标描述符定义
 // ==========================================
-#define MOUSE_VID 0xffff
-#define MOUSE_PID 0xffff
+#define MOUSE_VID 0xFFFF
+#define MOUSE_PID 0xFFFF
 #define MOUSE_CONFIG_SIZE 34
 #define HID_MOUSE_REPORT_DESC_SIZE 74
 
@@ -184,11 +179,13 @@ static struct usbd_interface intf0;
 void usbd_hid_init(uint8_t busid, uintptr_t reg_base)
 {
     if (g_usb_function == USBD_GMPD) {
+        g_lvgl_input_disabled = 1;
         usbd_desc_register(busid, &gamepad_descriptor);
         usbd_add_interface(busid, usbd_gamepad_xinput_init_intf(&intf0));
         usbd_add_endpoint(busid, &ep_in);
         usbd_add_endpoint(busid, &ep_out);
     } else if (g_usb_function == USBD_MOU) {
+        g_lvgl_input_disabled = 1;
         usbd_desc_register(busid, &mouse_descriptor);
         usbd_add_interface(busid, usbd_hid_init_intf(busid, &intf0, hid_mouse_report_desc, HID_MOUSE_REPORT_DESC_SIZE));
         usbd_add_endpoint(busid, &ep_in);
@@ -203,6 +200,7 @@ void usbd_hid_init(uint8_t busid, uintptr_t reg_base)
 
 void usbd_hid_deinit(void)
 {
+    g_lvgl_input_disabled = 0;
     usbd_ep_close(0, 0x81);
     usbd_ep_close(0, GAMEPAD_OUT_EP); 
 	usbd_deinitialize(0);
@@ -249,7 +247,7 @@ void usbd_hid_task(void)
         if (g_key_L_M_RT) report.buttons |= USB_GAMEPAD_BUTTON_L3;
         if (g_key_R_M_RT) report.buttons |= USB_GAMEPAD_BUTTON_R3;
 
-        report.lx = g_key_L_X;
+        report.lx = -g_key_L_X;
         report.ly = g_key_L_Y;
 
         switch (current_hw_mode) 
@@ -295,7 +293,7 @@ void usbd_hid_task(void)
         
         if (g_key_L_Y > 80 || g_key_L_Y < -80) {
             if (wheel_delay_cnt == 0) {
-                g_mouse_report.wheel = (g_key_L_Y > 80) ? -1 : 1;
+                g_mouse_report.wheel = (g_key_L_Y > 80) ? 1 : -1;
                 wheel_delay_cnt = WHEEL_DELAY_TICKS; 
             } else {
                 wheel_delay_cnt--;

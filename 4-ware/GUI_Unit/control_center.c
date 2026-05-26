@@ -4,6 +4,7 @@
 #include "defines.h"
 #include "pin_ctrl.h"
 #include "malloc.h"
+#include "kvdb_ctrl.h"
 
 extern const lv_img_dsc_t control_light;
 extern const lv_img_dsc_t control_headphone;
@@ -162,7 +163,7 @@ void Create_Control_Center(void)
 	lv_obj_clear_flag(cc->switch_knob, LV_OBJ_FLAG_SCROLLABLE);
 	lv_obj_add_flag(cc->switch_knob, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-	if (g_hdp0_or_spk1 == 0) {
+	if (kv_hdp0_or_spk1 == 0) {
 		lv_obj_align(cc->switch_knob, LV_ALIGN_TOP_MID, 0, 0);
 	} else {
 		lv_obj_align(cc->switch_knob, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -177,7 +178,7 @@ void Create_Control_Center(void)
 	lv_obj_add_flag(cc->btn_bright_pwr, LV_OBJ_FLAG_CHECKABLE);
 	lv_obj_add_style(cc->btn_bright_pwr, &cc->style_btn_base, LV_PART_MAIN);
 	lv_obj_add_style(cc->btn_bright_pwr, &cc->style_btn_checked, LV_STATE_CHECKED);
-	if (g_screen_status == 1) lv_obj_add_state(cc->btn_bright_pwr, LV_STATE_CHECKED);
+	if (kv_screen_status == 1) lv_obj_add_state(cc->btn_bright_pwr, LV_STATE_CHECKED);
 	lv_obj_add_event_cb(cc->btn_bright_pwr, btn_pwr_event_cb, LV_EVENT_VALUE_CHANGED, (void*)0);
 
 	lv_obj_t * img_bright = lv_img_create(cc->btn_bright_pwr);
@@ -192,7 +193,7 @@ void Create_Control_Center(void)
 	lv_obj_add_flag(cc->btn_hdp_pwr, LV_OBJ_FLAG_CHECKABLE);
 	lv_obj_add_style(cc->btn_hdp_pwr, &cc->style_btn_base, LV_PART_MAIN);
 	lv_obj_add_style(cc->btn_hdp_pwr, &cc->style_btn_checked, LV_STATE_CHECKED);
-	if (g_es9018_status == 1) lv_obj_add_state(cc->btn_hdp_pwr, LV_STATE_CHECKED);
+	if (kv_es9018_status == 1) lv_obj_add_state(cc->btn_hdp_pwr, LV_STATE_CHECKED);
 	lv_obj_add_event_cb(cc->btn_hdp_pwr, btn_pwr_event_cb, LV_EVENT_VALUE_CHANGED, (void*)1);
 
 	lv_obj_t * img_hdp = lv_img_create(cc->btn_hdp_pwr);
@@ -207,7 +208,7 @@ void Create_Control_Center(void)
 	lv_obj_add_flag(cc->btn_spk_pwr, LV_OBJ_FLAG_CHECKABLE);
 	lv_obj_add_style(cc->btn_spk_pwr, &cc->style_btn_base, LV_PART_MAIN);
 	lv_obj_add_style(cc->btn_spk_pwr, &cc->style_btn_checked, LV_STATE_CHECKED);
-	if (g_max98357_ststus == 1) {lv_obj_add_state(cc->btn_spk_pwr, LV_STATE_CHECKED);}
+	if (kv_max98357_ststus == 1) {lv_obj_add_state(cc->btn_spk_pwr, LV_STATE_CHECKED);}
 	lv_obj_add_event_cb(cc->btn_spk_pwr, btn_pwr_event_cb, LV_EVENT_VALUE_CHANGED, (void*)2);
 
 	lv_obj_t * img_spk = lv_img_create(cc->btn_spk_pwr);
@@ -225,7 +226,7 @@ void Create_Control_Center(void)
 	lv_obj_set_pos(cc->slider_bright, slider_right_x, 10);
 	lv_obj_set_ext_click_area(cc->slider_bright, 0);
 	lv_slider_set_range(cc->slider_bright, 0, 255);
-	lv_slider_set_value(cc->slider_bright, g_brightness, LV_ANIM_OFF);
+	lv_slider_set_value(cc->slider_bright, kv_brightness, LV_ANIM_OFF);
 	lv_obj_add_style(cc->slider_bright, &cc->style_slider_bg, LV_PART_MAIN);
 	lv_obj_add_style(cc->slider_bright, &cc->style_slider_indic, LV_PART_INDICATOR);
 	lv_obj_add_style(cc->slider_bright, &cc->style_slider_indic_disabled, LV_PART_INDICATOR | LV_STATE_DISABLED);
@@ -233,7 +234,7 @@ void Create_Control_Center(void)
 	lv_obj_add_event_cb(cc->slider_bright, slider_value_event_cb, LV_EVENT_VALUE_CHANGED, (void*)0);
 
 	cc->label_bright = lv_label_create(cc->slider_bright);
-	lv_label_set_text_fmt(cc->label_bright, "%03d", g_brightness);
+	lv_label_set_text_fmt(cc->label_bright, "%03d", kv_brightness);
 	lv_obj_set_style_text_color(cc->label_bright, lv_color_black(), LV_PART_MAIN);
 	lv_obj_align(cc->label_bright, LV_ALIGN_RIGHT_MID, -5, 0);
 
@@ -242,7 +243,7 @@ void Create_Control_Center(void)
 	lv_obj_set_pos(cc->slider_hdp, slider_right_x, 40);
 	lv_obj_set_ext_click_area(cc->slider_hdp, 0);
 	lv_slider_set_range(cc->slider_hdp, 0, 255);
-	lv_slider_set_value(cc->slider_hdp, g_hdp_value, LV_ANIM_OFF);
+	lv_slider_set_value(cc->slider_hdp, kv_hdp_value, LV_ANIM_OFF);
 	lv_obj_add_style(cc->slider_hdp, &cc->style_slider_bg, LV_PART_MAIN);
 	lv_obj_add_style(cc->slider_hdp, &cc->style_slider_indic, LV_PART_INDICATOR);
 	lv_obj_add_style(cc->slider_hdp, &cc->style_slider_indic_disabled, LV_PART_INDICATOR | LV_STATE_DISABLED);
@@ -250,7 +251,7 @@ void Create_Control_Center(void)
 	lv_obj_add_event_cb(cc->slider_hdp, slider_value_event_cb, LV_EVENT_VALUE_CHANGED, (void*)1);
 
 	cc->label_hdp = lv_label_create(cc->slider_hdp);
-	lv_label_set_text_fmt(cc->label_hdp, "%03d", g_hdp_value);
+	lv_label_set_text_fmt(cc->label_hdp, "%03d", kv_hdp_value);
 	lv_obj_set_style_text_color(cc->label_hdp, lv_color_black(), LV_PART_MAIN);
 	lv_obj_align(cc->label_hdp, LV_ALIGN_RIGHT_MID, -5, 0);
 
@@ -259,7 +260,7 @@ void Create_Control_Center(void)
 	lv_obj_set_pos(cc->slider_spk, slider_right_x, 70);
 	lv_obj_set_ext_click_area(cc->slider_spk, 0);
 	lv_slider_set_range(cc->slider_spk, 0, 255);
-	lv_slider_set_value(cc->slider_spk, g_spk_value, LV_ANIM_OFF);
+	lv_slider_set_value(cc->slider_spk, kv_spk_value, LV_ANIM_OFF);
 	lv_obj_add_style(cc->slider_spk, &cc->style_slider_bg, LV_PART_MAIN);
 	lv_obj_add_style(cc->slider_spk, &cc->style_slider_indic, LV_PART_INDICATOR);
 	lv_obj_add_style(cc->slider_spk, &cc->style_slider_indic_disabled, LV_PART_INDICATOR | LV_STATE_DISABLED);
@@ -267,7 +268,7 @@ void Create_Control_Center(void)
 	lv_obj_add_event_cb(cc->slider_spk, slider_value_event_cb, LV_EVENT_VALUE_CHANGED, (void*)2);
 
 	cc->label_spk = lv_label_create(cc->slider_spk);
-	lv_label_set_text_fmt(cc->label_spk, "%03d", g_spk_value);
+	lv_label_set_text_fmt(cc->label_spk, "%03d", kv_spk_value);
 	lv_obj_set_style_text_color(cc->label_spk, lv_color_black(), LV_PART_MAIN);
 	lv_obj_align(cc->label_spk, LV_ALIGN_RIGHT_MID, -5, 0);
 
@@ -277,6 +278,10 @@ void Create_Control_Center(void)
 void Remove_Control_Center(void)
 {
 	if (cc == NULL) return;
+
+	kvdb_persist_mark(KV_IDX_kv_brightness);
+	kvdb_persist_mark(KV_IDX_kv_hdp_value);
+	kvdb_persist_mark(KV_IDX_kv_spk_value);
 
 	if (cc->ctrl_center_cont != NULL) {
 		lv_obj_del(cc->ctrl_center_cont);
@@ -328,7 +333,7 @@ static void btn_close_event_cb(lv_event_t * e)
 
 static void custom_switch_event_cb(lv_event_t * e)
 {
-	if (g_hdp0_or_spk1 == 0) {
+	if (kv_hdp0_or_spk1 == 0) {
 		I2S_Exchange_Ctrl(1);
 		lv_obj_align(cc->switch_knob, LV_ALIGN_BOTTOM_MID, 0, 0);
 	} else {
@@ -345,13 +350,16 @@ static void btn_pwr_event_cb(lv_event_t * e)
 
 	switch(type) {
 		case 0:
-			if(is_on) g_screen_status = 1; else g_screen_status = 0;
+			if(is_on) kv_screen_status = 1; else kv_screen_status = 0;
+			kvdb_persist_mark(KV_IDX_kv_screen_status);
 			break;
 		case 1:
-			if(is_on) g_es9018_status = 1; else g_es9018_status = 0;
+			if(is_on) kv_es9018_status = 1; else kv_es9018_status = 0;
+			kvdb_persist_mark(KV_IDX_kv_es9018_status);
 			break;
 		case 2:
-			if(is_on) g_max98357_ststus = 1; else g_max98357_ststus = 0;
+			if(is_on) kv_max98357_ststus = 1; else kv_max98357_ststus = 0;
+			kvdb_persist_mark(KV_IDX_kv_max98357_ststus);
 			break;
 	}
 
@@ -366,16 +374,16 @@ static void slider_value_event_cb(lv_event_t * e)
 
 	switch(type) {
 		case 0:
-			g_brightness = val;
-			lv_label_set_text_fmt(cc->label_bright, "%03d", g_brightness);
+			kv_brightness = val;
+			lv_label_set_text_fmt(cc->label_bright, "%03d", kv_brightness);
 			break;
 		case 1:
-			g_hdp_value = val;
-			lv_label_set_text_fmt(cc->label_hdp, "%03d", g_hdp_value);
+			kv_hdp_value = val;
+			lv_label_set_text_fmt(cc->label_hdp, "%03d", kv_hdp_value);
 			break;
 		case 2:
-			g_spk_value = val;
-			lv_label_set_text_fmt(cc->label_spk, "%03d", g_spk_value);
+			kv_spk_value = val;
+			lv_label_set_text_fmt(cc->label_spk, "%03d", kv_spk_value);
 			break;
 	}
 }

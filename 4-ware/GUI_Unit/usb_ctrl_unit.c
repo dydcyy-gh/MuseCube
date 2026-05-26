@@ -3,6 +3,7 @@
 #include "variables.h"
 #include "defines.h"
 #include "malloc.h"
+#include "keyboard.h"
 
 LV_FONT_DECLARE(lv_font_16);
 
@@ -37,7 +38,7 @@ typedef struct {
 } usb_btn_cfg_t;
 
 static const usb_btn_cfg_t slave_btn_cfg[8] = {
-	{"虚拟串口", USBD_CDC},
+	{"虚拟串口", USBD_CMD},
 	{"虚拟U盘", USBD_MSC},
 	{"解码耳放", USBD_UAC1},
 	{"解码耳放", USBD_UAC2},
@@ -48,9 +49,9 @@ static const usb_btn_cfg_t slave_btn_cfg[8] = {
 };
 
 static const usb_btn_cfg_t host_btn_cfg[4] = {
-	{"串口调试", USBH_CDC},
+	{"无功能", USBH_CDC},
 	{"U盘读取", USBH_MSC},
-	{"手柄输入", USBH_GMPD},
+	{"无功能", USBH_GMPD},
 	{"键鼠输入", USBH_HID}
 };
 
@@ -120,7 +121,6 @@ void Create_USB_Unit(void)
 	lv_obj_set_style_text_font(us->label_status_val, &lv_font_16, 0);
 	lv_obj_align_to(us->label_status_val, label_status_title, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
 
-	// 前两排：从机模式功能 (8个)
 	for (int i = 0; i < 8; i++) {
 		int row = i / 4, col = i % 4;
 
@@ -139,7 +139,6 @@ void Create_USB_Unit(void)
 		lv_obj_add_event_cb(us->btns_slave[i], btn_event_cb, LV_EVENT_CLICKED, (void *)&slave_btn_cfg[i]);
 	}
 
-	// 第三排：主机模式功能 (4个)
 	for (int i = 0; i < 4; i++) {
 		int row = 2, col = i;
 
@@ -167,6 +166,16 @@ void Update_USB_Unit(void)
 {
 	if (us == NULL) return;
 
+	Update_Keyboard();
+	
+	bool is_slave = (g_usb_status == TYPEC_AC_OKEY || g_usb_status == TYPEC_CC_OKEY);
+	bool is_host  = (g_usb_status == TYPEC_CC_HOST || g_usb_status == TYPEC_IS_HOST);
+	
+	// 断开强制清零，防止重连自动触发
+	if (!is_slave && !is_host && g_usb_function != USB_NONE) {
+		g_usb_function = USB_NONE;
+	}
+
 	if (us->last_usb_status != g_usb_status || us->last_usb_function != g_usb_function) {
 		us->last_usb_status = g_usb_status;
 		us->last_usb_function = g_usb_function;
@@ -186,8 +195,6 @@ void Remove_USB_Unit(void)
 	us = NULL;
 }
 
-// ---------------- 内部回调与状态更新实现 ----------------
-
 static void update_buttons_state(void)
 {
 	bool is_slave = (g_usb_status == TYPEC_AC_OKEY || g_usb_status == TYPEC_CC_OKEY);
@@ -204,27 +211,35 @@ static void update_buttons_state(void)
 		for (int i = 0; i < 4; i++) lv_obj_add_state(us->btns_host[i], LV_STATE_DISABLED);
 	}
 
+	lv_obj_add_state(us->btns_slave[0], LV_STATE_DISABLED);
+
 	for (int i = 0; i < 8; i++) lv_obj_clear_state(us->btns_slave[i], LV_STATE_CHECKED);
 	for (int i = 0; i < 4; i++) lv_obj_clear_state(us->btns_host[i], LV_STATE_CHECKED);
 
-	if (g_usb_function == USB_NONE) {
+	if (!is_slave && !is_host) {
+		if (g_usb_status == TYPEC_CC_IDLE) {
+			lv_label_set_text(us->label_status_val, "C-C线缆接入");
+		} else if (g_usb_status == TYPEC_AC_IDLE) {
+			lv_label_set_text(us->label_status_val, "A-C线缆接入");
+		} else {
+			lv_label_set_text(us->label_status_val, "未连接");
+		}
+	} else if (g_usb_function == USB_NONE) {
 		if (is_slave) {
 			lv_label_set_text(us->label_status_val, "仅充电");
 		} else if (is_host) {
 			lv_label_set_text(us->label_status_val, "仅供电");
-		} else {
-			if (g_usb_status == TYPEC_CC_IDLE) {
-				lv_label_set_text(us->label_status_val, "C-C线缆接入");
-			} else if (g_usb_status == TYPEC_AC_IDLE) {
-				lv_label_set_text(us->label_status_val, "A-C线缆接入");
-			} else {
-				lv_label_set_text(us->label_status_val, "未连接");
-			}
 		}
 	} else {
 		bool found = false;
 
-		if (is_slave) {
+		if (g_usb_function == USBD_LOG) {
+			lv_obj_add_state(us->btns_slave[0], LV_STATE_CHECKED);
+			lv_label_set_text(us->label_status_val, "日志输出");
+			found = true;
+		}
+
+		if (!found && is_slave) {
 			for (int i = 0; i < 8; i++) {
 				if (slave_btn_cfg[i].function_val == g_usb_function) {
 					lv_obj_add_state(us->btns_slave[i], LV_STATE_CHECKED);
@@ -233,7 +248,9 @@ static void update_buttons_state(void)
 					break;
 				}
 			}
-		} else if (is_host) {
+		}
+
+		if (!found && is_host) {
 			for (int i = 0; i < 4; i++) {
 				if (host_btn_cfg[i].function_val == g_usb_function) {
 					lv_obj_add_state(us->btns_host[i], LV_STATE_CHECKED);
@@ -255,6 +272,11 @@ static void btn_event_cb(lv_event_t * e)
 	usb_btn_cfg_t * cfg = (usb_btn_cfg_t *)lv_event_get_user_data(e);
 	g_usb_function = cfg->function_val;
 	us->last_usb_function = g_usb_function;
+	if (g_usb_function == USBD_KBD) {
+		Create_Keyboard_EN(NULL);
+	} else {
+		Remove_Keyboard();
+	}
 	update_buttons_state();
 }
 
@@ -262,5 +284,6 @@ static void end_task_event_cb(lv_event_t * e)
 {
 	g_usb_function = USB_NONE;
 	us->last_usb_function = g_usb_function;
+	Remove_Keyboard();
 	update_buttons_state();
 }

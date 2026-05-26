@@ -235,9 +235,9 @@ void nes_task(void)
 		
 		for(uint16_t i = 0; i < APU_PCMBUF_SIZE; i++) 
 		{
-			if(g_hdp0_or_spk1)
+			if(kv_hdp0_or_spk1)
 			{
-				int32_t val = ((int32_t)((int16_t)wave_buffers[i]) * g_spk_value) >> 8;
+				int32_t val = ((int32_t)((int16_t)wave_buffers[i]) * kv_spk_value) >> 8;
 				target_buf[i * 2]     = (uint16_t)val; // 左声道
 				target_buf[i * 2 + 1] = (uint16_t)val; // 右声道
 			}

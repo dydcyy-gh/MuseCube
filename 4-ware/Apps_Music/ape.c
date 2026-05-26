@@ -27,7 +27,7 @@ extern filter_int *filterbuf64;		//需要2816字节
 void ape_apply_volume_in_place(uint16_t* buf, uint16_t size)
 {
     // 如果是最大音量，直接返回，实现真正的 Zero-Copy (CPU占用为0)
-    if (!g_hdp0_or_spk1 || g_spk_value == 0xFF) return;
+    if (!kv_hdp0_or_spk1 || kv_spk_value == 0xFF) return;
 
     // 使用32位指针处理，利用 STM32 总线位宽一次读写两个采样点
     uint32_t *p32 = (uint32_t *)buf;
@@ -42,8 +42,8 @@ void ape_apply_volume_in_place(uint16_t* buf, uint16_t size)
         int16_t high = (int16_t)(raw >> 16);
 
         // 分别计算音量 (位移代替除法)
-        int32_t val_low = ((int32_t)low * g_spk_value) >> 8;
-        int32_t val_high = ((int32_t)high * g_spk_value) >> 8;
+        int32_t val_low = ((int32_t)low * kv_spk_value) >> 8;
+        int32_t val_high = ((int32_t)high * kv_spk_value) >> 8;
 
         // 拼合回32位并写入
         // 关键：(uint16_t)强制转换是为了截断高位符号，防止负数干扰位或运算
@@ -267,9 +267,9 @@ void ape_play_song_task(uint8_t* fname)
 		if(Music_Status == Song_Error) Music_Status = Music_Exit;
 		if(Music_Status == Song_End) 
 		{
-			if(Music_Switch_Method == Play_In_Order) play_next_song();
-			if(Music_Switch_Method == Play_Randomly) play_random_song();
-			if(Music_Switch_Method == Play_Repeatly) play_same_song();
+			if(kv_music_switch_method == Play_In_Order) play_next_song();
+			if(kv_music_switch_method == Play_Randomly) play_random_song();
+			if(kv_music_switch_method == Play_Repeatly) play_same_song();
 			Music_Status = Song_Prepare;
 		}
 		if(Music_Status == Song_Next)  

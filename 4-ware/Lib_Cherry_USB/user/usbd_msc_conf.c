@@ -3,16 +3,18 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include "stm32f4xx.h"
 #include "usbd_core.h"
 #include "usbd_msc.h"
 #include "sdio_sdcard.h"
 #include "variables.h"
 #include "defines.h"
 #include "fatfs.h"
+#include "systick_conf.h"
 
 /*!< endpoint address */
 #define MSC_IN_EP  0x81
-#define MSC_OUT_EP 0x02
+#define MSC_OUT_EP 0x01
 
 #define USBD_VID           0xFFFF
 #define USBD_PID           0xFFFF
@@ -110,10 +112,17 @@ void usbd_msc_init(uint8_t busid, uintptr_t reg_base)
 
 void usbd_msc_deinit(void)
 {
-	fatfs_mount(DEV_SD);
+	// 修正为 0x804 ! DCTL 控制寄存器
+	*(volatile uint32_t *)(USB_OTG_HS_PERIPH_BASE + 0x804) |= (1U << 1); 
+	
+	Delay_ms(300);
+
 	usbd_ep_close(0, MSC_IN_EP);
     usbd_ep_close(0, MSC_OUT_EP);
 	usbd_deinitialize(0);
+	
+	// 放最后恢复SD卡
+	fatfs_mount(DEV_SD);
 }
 
 extern void my_usbd_msc_thread(void); //from usbd_msc.c
@@ -123,10 +132,8 @@ void usbd_msc_task(void)
 	my_usbd_msc_thread();
 }
 
-	
 #define SD_SECTOR_SIZE 512
 
-/* 查询容量：仅SD卡 */
 void usbd_msc_get_cap(uint8_t busid, uint8_t lun, uint32_t *block_num, uint32_t *block_size)
 {
     (void)busid;
@@ -135,7 +142,6 @@ void usbd_msc_get_cap(uint8_t busid, uint8_t lun, uint32_t *block_num, uint32_t 
     *block_num  = SDCardInfo.CardCapacity / SD_SECTOR_SIZE;
 }
 
-/* 扇区读：仅SD卡 */
 int usbd_msc_sector_read(uint8_t busid, uint8_t lun, uint32_t sector, uint8_t *buffer, uint32_t length)
 {
     (void)busid;
@@ -143,7 +149,6 @@ int usbd_msc_sector_read(uint8_t busid, uint8_t lun, uint32_t sector, uint8_t *b
     return SD_ReadDisk(buffer, sector, length / SD_SECTOR_SIZE);
 }
 
-/* 扇区写：仅SD卡 */
 int usbd_msc_sector_write(uint8_t busid, uint8_t lun, uint32_t sector, uint8_t *buffer, uint32_t length)
 {
     (void)busid;

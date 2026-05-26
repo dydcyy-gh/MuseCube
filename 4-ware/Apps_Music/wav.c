@@ -156,12 +156,12 @@ uint32_t wav_buffill(uint8_t* buf, uint16_t size, uint8_t bits)
         uint32_t *p32_in = (uint32_t *)music_ctrl.tbuf;
         uint32_t samples = size / 4; 
 		
-        if(g_hdp0_or_spk1) 
+        if(kv_hdp0_or_spk1) 
         {
             for (uint32_t i = 0; i < samples; i++) 
             {
                 int32_t sample = p32_in[i]; // 这里的隐式转换是安全的
-                int32_t scaled = (int32_t)(((int64_t)sample * g_spk_value) >> 8);
+                int32_t scaled = (int32_t)(((int64_t)sample * kv_spk_value) >> 8);
                 p32_out[i] = __ROR(scaled, 16); 
             }
         }
@@ -183,12 +183,12 @@ uint32_t wav_buffill(uint8_t* buf, uint16_t size, uint8_t bits)
         p_in_base = music_ctrl.tbuf;
         uint32_t samples = size / 4;
 
-        if(g_hdp0_or_spk1)
+        if(kv_hdp0_or_spk1)
         {
             for(uint32_t i = 0; i < samples; i++)
             {
                 int32_t sample = (int32_t)((p_in_base[0]<<8)|(p_in_base[1]<<16)|(p_in_base[2]<<24))>>8;
-                int32_t scaled = (sample * g_spk_value) >> 8;
+                int32_t scaled = (sample * kv_spk_value) >> 8;
                 uint32_t val = ((scaled & 0xFF)<<24) | (((scaled>>16) & 0xFF) << 8) | ((scaled >> 8) & 0xFF);
                 p32_out[i] = val;
                 p_in_base += 3;
@@ -215,11 +215,11 @@ uint32_t wav_buffill(uint8_t* buf, uint16_t size, uint8_t bits)
         
         uint32_t samples = size / 2;
 
-        if(g_hdp0_or_spk1)
+        if(kv_hdp0_or_spk1)
         {
             for (uint32_t i = 0; i < samples; i++) 
             {
-                int32_t val = ((int32_t)p16_in[i] * g_spk_value) >> 8;
+                int32_t val = ((int32_t)p16_in[i] * kv_spk_value) >> 8;
                 p16_out[i] = (int16_t)val;
             }
         }
@@ -410,9 +410,9 @@ void wav_play_song_task(uint8_t* fname)
 		if(Music_Status == Song_Error) Music_Status = Music_Exit;
 		if(Music_Status == Song_End) 
 		{
-			if(Music_Switch_Method == Play_In_Order) play_next_song();
-			if(Music_Switch_Method == Play_Randomly) play_random_song();
-			if(Music_Switch_Method == Play_Repeatly) play_same_song();
+			if(kv_music_switch_method == Play_In_Order) play_next_song();
+			if(kv_music_switch_method == Play_Randomly) play_random_song();
+			if(kv_music_switch_method == Play_Repeatly) play_same_song();
 			Music_Status = Song_Prepare;
 		}
 		if(Music_Status == Song_Next)  

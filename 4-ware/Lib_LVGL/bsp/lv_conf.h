@@ -193,7 +193,7 @@
  *-----------*/
 
 /*启用日志模块*/
-#define LV_USE_LOG 0
+#define LV_USE_LOG 1
 #if LV_USE_LOG
 
     /*应添加的日志的重要性：
@@ -203,7 +203,7 @@
     *LV_LOG_LEVEL_ERROR       仅关键问题，当系统可能失败时
     *LV_LOG_LEVEL_USER        仅用户添加的日志
     *LV_LOG_LEVEL_NONE        不记录任何内容*/
-    #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
+    #define LV_LOG_LEVEL LV_LOG_LEVEL_ERROR
 
     /*1: 使用 'printf' 打印日志；
     *0: 用户需要使用 `lv_log_register_print_cb()` 注册回调*/

@@ -7,6 +7,7 @@
 #include "es9018k2m.h"
 #include "page_manager.h"
 #include "variables.h"
+#include "kvdb_ctrl.h"
 #include "malloc.h"
 
 // --- 状态结构体 ---
@@ -49,6 +50,8 @@ static const char * filter_opts[] = {"Fast Rolloff", "Slow Rolloff", "Minimum Ph
 static const char * iir_opts[] = {"1.0757 fs", "1.1338 fs", "1.3605 fs", "1.5873 fs"};
 static const char * ch_opts[] = {"Left", "Right"};
 static const char * stop_div_opts[] = {"18364", "8192", "5461", "4096", "3276", "2730", "2340", "2048"};
+
+static const ES9018_Config_t es9018_defaults = {0,0,104,2,0,0,0,0,0,5,0,1,5,1,0,0,0,0};
 
 static void init_custom_styles(void)
 {
@@ -219,18 +222,19 @@ static void create_switch_row(lv_obj_t * parent, int y_ofs, const char * title, 
 	lv_obj_add_event_cb(sw, setting_event_cb, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)id);
 }
 
-void Create_ES9018_Unit(void)
+static void build_es9018_content(void);
+
+static void btn_reset_event_cb(lv_event_t * e)
 {
-	if (es != NULL) return;
+	(void)e;
+	es->cur_cfg = es9018_defaults;
+	ES9018_Set_Config(&es->cur_cfg);
+	lv_obj_del(es->es9018_cont);
+	build_es9018_content();
+}
 
-	es = (es9018_state_t *)malloc_ccm(sizeof(es9018_state_t));
-	if (!es) return;
-	memset(es, 0, sizeof(es9018_state_t));
-
-	init_custom_styles();
-
-	ES9018_Get_Config(&es->cur_cfg);
-
+static void build_es9018_content(void)
+{
 	es->es9018_cont = lv_obj_create(lv_scr_act());
 	lv_obj_set_size(es->es9018_cont, 240, 180);
 	lv_obj_center(es->es9018_cont);
@@ -312,11 +316,46 @@ void Create_ES9018_Unit(void)
 	create_switch_row(es->es9018_cont, y_ofs, "失锁时输出变低", ID_OUTL_LOCK, es->cur_cfg.OutL_Lock);
 	y_ofs += 30;
 
+	// 恢复默认设置
+	{
+		lv_obj_t * label = lv_label_create(es->es9018_cont);
+		lv_obj_set_style_text_font(label, &lv_font_12, 0);
+		lv_label_set_text(label, "恢复默认设置");
+		lv_obj_align(label, LV_ALIGN_TOP_LEFT, 10, y_ofs + 4);
+
+		lv_obj_t * btn = lv_btn_create(es->es9018_cont);
+		lv_obj_set_size(btn, 110, 20);
+		lv_obj_align(btn, LV_ALIGN_TOP_RIGHT, -10, y_ofs);
+		lv_obj_add_style(btn, &es->style_btn_base, LV_PART_MAIN);
+		lv_obj_add_event_cb(btn, btn_reset_event_cb, LV_EVENT_CLICKED, NULL);
+
+		lv_obj_t * btn_label = lv_label_create(btn);
+		lv_obj_set_style_text_font(btn_label, &lv_font_12, 0);
+		lv_label_set_text(btn_label, "重置");
+		lv_obj_center(btn_label);
+	}
+	y_ofs += 30;
+
 	lv_obj_t * bottom_pad = lv_obj_create(es->es9018_cont);
 	lv_obj_set_size(bottom_pad, 10, 20);
 	lv_obj_set_style_opa(bottom_pad, LV_OPA_TRANSP, 0);
 	lv_obj_set_style_border_width(bottom_pad, 0, 0);
 	lv_obj_align(bottom_pad, LV_ALIGN_TOP_MID, 0, y_ofs);
+}
+
+void Create_ES9018_Unit(void)
+{
+	if (es != NULL) return;
+
+	es = (es9018_state_t *)malloc_ccm(sizeof(es9018_state_t));
+	if (!es) return;
+	memset(es, 0, sizeof(es9018_state_t));
+
+	init_custom_styles();
+
+	ES9018_Get_Config(&es->cur_cfg);
+
+	build_es9018_content();
 }
 
 void Update_ES9018_Unit(void)
@@ -326,6 +365,9 @@ void Update_ES9018_Unit(void)
 void Remove_ES9018_Unit(void)
 {
 	if (es == NULL) return;
+
+	ES9018_Get_Config((ES9018_Config_t *)&kv_es9018_cfg);
+	kvdb_persist_mark(KV_IDX_kv_es9018_cfg);
 
 	if (es->es9018_cont != NULL) {
 		lv_obj_del(es->es9018_cont);

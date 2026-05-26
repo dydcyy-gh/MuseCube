@@ -1,126 +1,20 @@
-/*
- * usbh_serial_conf.c
- */
-
-#include "FreeRTOS.h"
-#include "task.h"
+#include "usbh_serial_conf.h"
 #include "usbh_core.h"
 #include "usbh_serial.h"
-#include "systick_conf.h"  // 根据你工程实际的延时头文件调整
+#include "systick_conf.h" 
+#include <string.h>
 
 static volatile uint8_t g_usbh_serial_connected = 0;
-static volatile uint8_t g_usbh_serial_tested = 0;
 static struct usbh_serial *g_serial_dev = NULL;
-
-#define SERIAL_TEST_LEN 64
-
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t serial_tx_buffer[SERIAL_TEST_LEN];
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t serial_rx_data[SERIAL_TEST_LEN];
-
-int usb_serial_test(void)
-{
-    int ret;
-    struct usbh_serial *serial = NULL;
-    bool serial_test_success = false;
-    uint32_t serial_tx_bytes = 0;
-    uint32_t serial_rx_bytes = 0;
-
-    // 1. 尝试打开串口设备
-    serial = usbh_serial_open("/dev/ttyACM0", USBH_SERIAL_O_RDWR | USBH_SERIAL_O_NONBLOCK);
-    if (serial == NULL) {
-        serial = usbh_serial_open("/dev/ttyUSB0", USBH_SERIAL_O_RDWR | USBH_SERIAL_O_NONBLOCK);
-        if (serial == NULL) {
-            USB_LOG_RAW("no serial device found\r\n");
-            return -1;
-        }
-    }
-
-    // 2. 配置串口参数 115200 8N1
-    struct usbh_serial_termios termios;
-    memset(&termios, 0, sizeof(termios));
-    termios.baudrate = 115200;
-    termios.stopbits = 0;
-    termios.parity = 0;
-    termios.databits = 8;
-    termios.rtscts = false;
-    termios.rx_timeout = 0;
-    ret = usbh_serial_control(serial, USBH_SERIAL_CMD_SET_ATTR, &termios);
-    if (ret < 0) {
-        USB_LOG_RAW("set serial attr error, ret:%d\r\n", ret);
-        return -1;
-    }
-
-    // 3. 准备发送数据
-    memset(serial_tx_buffer, 0xA5, sizeof(serial_tx_buffer));
-    USB_LOG_RAW("start serial loopback test, len: %d\r\n", SERIAL_TEST_LEN);
-
-    // 发送数据
-    while (1) {
-        ret = usbh_serial_write(serial, serial_tx_buffer, sizeof(serial_tx_buffer));
-        if (ret < 0) {
-            USB_LOG_RAW("serial write error, ret:%d\r\n", ret);
-            return -1;
-        } else {
-            serial_tx_bytes += ret;
-            if (serial_tx_bytes == SERIAL_TEST_LEN) {
-                USB_LOG_RAW("send over\r\n");
-                break;
-            }
-        }
-    }
-
-    // 4. 接收并验证数据 (需要外部硬件将TX与RX短接才能收到回环数据)
-    uint32_t wait_timeout = 0;
-    while (1) 
-	{
-        ret = usbh_serial_read(serial, &serial_rx_data[serial_rx_bytes], SERIAL_TEST_LEN - serial_rx_bytes);
-        if (ret < 0) 
-		{
-            USB_LOG_RAW("serial read error, ret:%d\r\n", ret);
-            return -1;
-        } else 
-		{
-            serial_rx_bytes += ret;
-
-            if (serial_rx_bytes == SERIAL_TEST_LEN) 
-			{
-                USB_LOG_RAW("receive over\r\n");
-                for (uint32_t i = 0; i < SERIAL_TEST_LEN; i++) {
-                    if (serial_rx_data[i] != 0xA5) {
-                        USB_LOG_RAW("loopback data error at index %d", i);
-                        return -1;
-                    }
-                }
-                serial_test_success = true;
-                break;
-            }
-        }
-        wait_timeout++;
-
-        if (wait_timeout > 100) { // 100 * 10ms = 1s
-            USB_LOG_RAW("serial read timeout (Please check if TX and RX are shorted)\r\n");
-            return -1;
-        }
-        Delay_ms(10);
-    }
-
-    if (serial_test_success) {
-        USB_LOG_RAW("serial loopback test success\r\n");
-    } else {
-        USB_LOG_RAW("serial loopback test failed\r\n");
-    }
-    // 5. 关闭设备
-    usbh_serial_close(serial);
-    return (serial_test_success ? 0 : -1);
-}
+static bool g_serial_is_opened = false;
 
 /* 当串口设备枚举成功后，底层会调用 run */
 void usbh_serial_run(struct usbh_serial *serial)
 {
-	Delay_ms(10000);
     g_serial_dev = serial;
     g_usbh_serial_connected = 1;
-    g_usbh_serial_tested = 0; // 每次新插入重置执行标志
+    // 这里不要写延时，尽早退出让USB核心任务继续
+    USB_LOG_RAW("USB Serial Device Plugged In!\r\n");
 }
 
 /* 当串口设备拔出时，底层会调用 stop */
@@ -130,36 +24,103 @@ void usbh_serial_stop(struct usbh_serial *serial)
         g_serial_dev = NULL;
     }
     g_usbh_serial_connected = 0;
+    g_serial_is_opened = false;
+    USB_LOG_RAW("USB Serial Device Unplugged!\r\n");
 }
+
+/* ================= 供应用层调用的接口实现 ================= */
+
+bool app_usb_serial_is_connected(void)
+{
+    return (g_usbh_serial_connected && g_serial_dev != NULL);
+}
+
+int app_usb_serial_open(void)
+{
+    if (!app_usb_serial_is_connected()) return -1;
+    if (g_serial_is_opened) return 0;
+
+    // 尝试打开 CDC(ACM) 或 厂商自定义(如CH340/CP2102) 设备
+    // 使用非阻塞模式，方便UI随时读取
+    struct usbh_serial *serial = usbh_serial_open("/dev/ttyACM0", USBH_SERIAL_O_RDWR | USBH_SERIAL_O_NONBLOCK);
+    if (serial == NULL) {
+        serial = usbh_serial_open("/dev/ttyUSB0", USBH_SERIAL_O_RDWR | USBH_SERIAL_O_NONBLOCK);
+    }
+    
+    if (serial != NULL) {
+        g_serial_dev = serial; // 确保指向打开的实例
+        g_serial_is_opened = true;
+        
+        // 默认配置 115200 8N1
+        app_usb_serial_config(115200, 8, 0, 0);
+        return 0;
+    }
+    return -1;
+}
+
+void app_usb_serial_close(void)
+{
+    if (g_serial_is_opened && g_serial_dev) {
+        usbh_serial_close(g_serial_dev);
+        g_serial_is_opened = false;
+    }
+}
+
+int app_usb_serial_config(uint32_t baudrate, uint8_t data_bits, uint8_t parity, uint8_t stop_bits)
+{
+    if (!g_serial_is_opened || !g_serial_dev) return -1;
+
+    struct usbh_serial_termios termios;
+    memset(&termios, 0, sizeof(termios));
+    termios.baudrate = baudrate;
+    termios.databits = data_bits;
+    termios.parity = parity;
+    termios.stopbits = stop_bits;
+    termios.rtscts = false;
+    termios.rx_timeout = 0;
+
+    return usbh_serial_control(g_serial_dev, USBH_SERIAL_CMD_SET_ATTR, &termios);
+}
+
+int app_usb_serial_send(const uint8_t *data, uint32_t len)
+{
+    if (!g_serial_is_opened || !g_serial_dev) return -1;
+    return usbh_serial_write(g_serial_dev, data, len);
+}
+
+int app_usb_serial_recv(uint8_t *buffer, uint32_t max_len)
+{
+    if (!g_serial_is_opened || !g_serial_dev) return 0;
+    
+    // 由于打开时使用了 USBH_SERIAL_O_NONBLOCK，这里读不到数据会立即返回0
+    int ret = usbh_serial_read(g_serial_dev, buffer, max_len);
+    return (ret > 0) ? ret : 0; 
+}
+
 
 /* ================= 提供给 usb_task 的统一接口 ================= */
 
-// 1. 初始化
 void usbh_serial_init(uint8_t busid, uint32_t reg_base)
 {
     g_usbh_serial_connected = 0;
-    g_usbh_serial_tested = 0;
+    g_serial_is_opened = false;
     g_serial_dev = NULL;
     usbh_initialize(busid, reg_base, NULL);
 }
 
-// 2. 反初始化
 void usbh_serial_deinit(void)
 {
+    app_usb_serial_close();
     usbh_deinitialize(0);
     g_usbh_serial_connected = 0;
-    g_usbh_serial_tested = 0;
+    g_serial_is_opened = false;
     g_serial_dev = NULL;
 }
 
-// 3. 业务任务 (由 USB_Task 循环调用)
 void usbh_serial_task(void)
 {
-    // 只有在串口连接成功，并且尚未执行过测试的情况下才去读写
-    if (g_usbh_serial_connected && !g_usbh_serial_tested) 
-    {
-        usb_serial_test();
-        g_usbh_serial_tested = 1;
-    }
+    // 如果想要系统自动打开串口，可以在这里处理
+    // 但通常对于串口助手来说，打开/关闭动作由用户在UI上点击按钮触发更好
+    // 如果是由UI触发，这个 task 里其实什么都不用做，或者做一些状态维护即可
     Delay_ms(20);
 }

@@ -66,6 +66,7 @@ void Create_Note_Unit(void)
 void Update_Note_Unit(void)
 {
 	if (ns == NULL) return;
+	Update_Keyboard();
 }
 
 void Remove_Note_Unit(void)

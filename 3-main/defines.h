@@ -38,13 +38,18 @@
 #define START_TASK_PRIO         8
 #define START_TASK_STACK_SIZE   512
 
+//Font task
+#define FONT_PRIO         1
+#define FONT_STACK_SIZE   512
+
 //...define for Rtos Task Settings...//
 #define Task_N_Basic     0
-#define Task_N_LVGL      1 
+#define Task_N_LVGL      1
 #define Task_N_USB       2
 #define Task_N_Music     3
 #define Task_N_Video     4
 #define Task_N_Game      5
+#define Task_N_Font      6
 
 
 //...define for task manager : task status...// (T-temporary  P-presistent)
@@ -95,21 +100,22 @@
 #define DEV_USB     1
 
 
-
 //...define for usb functions ...//
 #define USB_NONE        0
-#define USBD_CDC        1
-#define USBD_MSC        2
-#define USBD_UAC1       3
-#define USBD_UAC2       4
-#define USBD_DISP       5
-#define USBD_GMPD       6
-#define USBD_KBD        7
-#define USBD_MOU        8
-#define USBH_CDC        9
-#define USBH_MSC        10
-#define USBH_GMPD       11
-#define USBH_HID        12
+#define USBD_LOG        1
+#define USBD_CMD        2
+#define USBD_MSC        3
+#define USBD_UAC1       4
+#define USBD_UAC2       5
+#define USBD_DISP       6
+#define USBD_GMPD       7
+#define USBD_KBD        8
+#define USBD_MOU        9
+#define USBH_CDC        10
+#define USBH_MSC        11
+#define USBH_GMPD       12
+#define USBH_HID        13
+
 
 
 #define USB_OTG_HS_PERIPH_BASE  0x40040000UL

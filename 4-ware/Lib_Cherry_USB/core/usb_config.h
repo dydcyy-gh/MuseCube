@@ -8,14 +8,14 @@
 
 /* ================ USB common Configuration ================ */
 #include "debug.h"
-#define CONFIG_USB_PRINTF(...) //debug_printf(__VA_ARGS__)
+#define CONFIG_USB_PRINTF(...) debug_printf(__VA_ARGS__)
 
 #ifndef CONFIG_USB_DBG_LEVEL
-#define CONFIG_USB_DBG_LEVEL USB_DBG_INFO
+#define CONFIG_USB_DBG_LEVEL USB_DBG_LOG
 #endif
 
 /* Enable print with color */
-#define CONFIG_USB_PRINTF_COLOR_ENABLE
+// #define CONFIG_USB_PRINTF_COLOR_ENABLE
 
 // #define CONFIG_USB_DCACHE_ENABLE
 
@@ -71,7 +71,7 @@
 #endif
 
 #ifndef CONFIG_USBDEV_MSC_MAX_BUFSIZE
-#define CONFIG_USBDEV_MSC_MAX_BUFSIZE 512
+#define CONFIG_USBDEV_MSC_MAX_BUFSIZE 4096
 #endif
 
 #ifndef CONFIG_USBDEV_MSC_MANUFACTURER_STRING

@@ -43,11 +43,7 @@
 #endif
 
 #define usb_dbg_log_line(lvl, color_n, fmt, ...) \
-    do {                                         \
-        _USB_DBG_LOG_HDR(lvl, color_n);          \
-        CONFIG_USB_PRINTF(fmt, ##__VA_ARGS__);              \
-        _USB_DBG_LOG_X_END;                      \
-    } while (0)
+    CONFIG_USB_PRINTF("[" lvl "/" USB_DBG_TAG "] " fmt, ##__VA_ARGS__)
 
 #if (CONFIG_USB_DBG_LEVEL >= USB_DBG_LOG)
 #define USB_LOG_DBG(fmt, ...) usb_dbg_log_line("D", 0, fmt, ##__VA_ARGS__)

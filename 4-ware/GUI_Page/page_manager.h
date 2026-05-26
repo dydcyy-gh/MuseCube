@@ -48,7 +48,9 @@ typedef struct {
 #define PAGE_CMD         24
 #define PAGE_LOTS        25
 #define PAGE_ALBUM       26
-#define PAGE_MAX_ID      27
+#define PAGE_FONT_UPDATE 27
+#define PAGE_SERIAL      28
+#define PAGE_MAX_ID      29
 
 // 历史记录栈深度
 #define PAGE_HISTORY_MAX_DEPTH 6
@@ -68,5 +70,8 @@ void _Page_Request_Switch_Impl(uint32_t new_page_id, const char *path, ...);
 // 后退与历史管理函数
 void Page_Back(void);
 void Page_Clear_History(void);
+
+// 手动推入历史栈（用于 LVGL 被挂起前保存当前页面）
+void Page_Push_History(uint32_t page_id);
 
 #endif

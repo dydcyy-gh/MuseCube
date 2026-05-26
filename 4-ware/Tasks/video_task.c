@@ -21,6 +21,7 @@
 void Video_Task( void * pvParameters )
 {
     uint8_t res = 0;
+    uint8_t last_L = 0;
 
     Delay_ms(50);
 
@@ -28,6 +29,7 @@ void Video_Task( void * pvParameters )
 
     g_lcd_user = LCD_USER_VDEO;
     Taskmanager_Ctrl(Task_N_LVGL, Task_T_Suspend, 0);
+    Page_Push_History(Page_Get_Current());
     lv_port_disp_deinit();
     Page_Request_Switch(PAGE_VIDEO);
 
@@ -35,8 +37,10 @@ void Video_Task( void * pvParameters )
     {
         res = video_mjpeg_play_init(chosen_file_path);
         chosen_file_path_free();
-        while (!g_key_L_M_RT && !res)
+        while (!res)
         {
+            if (!g_key_L_M_RT && last_L) break;
+            last_L = g_key_L_M_RT;
             res = video_mjpeg_play_task();
         }
         video_mjpeg_play_deinit();
@@ -45,8 +49,10 @@ void Video_Task( void * pvParameters )
     {
         res = video_play_init(chosen_file_path);
         chosen_file_path_free();
-        while (!g_key_L_M_RT && !res)
+        while (!res)
         {
+            if (!g_key_L_M_RT && last_L) break;
+            last_L = g_key_L_M_RT;
             res = video_play_task();
         }
         video_play_deinit();
@@ -64,8 +70,10 @@ void Video_Task( void * pvParameters )
 			res = Decode_JPG_Picture(chosen_file_path);
         chosen_file_path_free();
 
-        while (!g_key_L_M_RT && !res)
+        while (!res)
         {
+            if (!g_key_L_M_RT && last_L) break;
+            last_L = g_key_L_M_RT;
             Delay_ms(20);
         }
     }
@@ -73,8 +81,10 @@ void Video_Task( void * pvParameters )
     {
         res = Decode_GIF_Init(chosen_file_path);
         chosen_file_path_free();
-        while (!g_key_L_M_RT && !res)
+        while (!res)
         {
+            if (!g_key_L_M_RT && last_L) break;
+            last_L = g_key_L_M_RT;
             res = Decode_GIF_Task();
         }
         Decode_GIF_Deinit();

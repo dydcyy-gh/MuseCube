@@ -24,6 +24,7 @@ static const Task_Registry_t Task_List[] = {
     [Task_N_Music] = { Music_Task, "Music_Task", MUSIC_STACK_SIZE, MUSIC_PRIO, &Music_Task_handler, &Music_Task_Status },
     [Task_N_Video] = { Video_Task, "Video_Task", VIDEO_STACK_SIZE, VIDEO_PRIO, &Video_Task_handler, &Video_Task_Status },
     [Task_N_Game]  = { Game_Task,  "Game_Task",  GAME_STACK_SIZE,  GAME_PRIO,  &Game_Task_handler,  &Game_Task_Status  },
+    [Task_N_Font]  = { Font_Task,  "Font_Task",  FONT_STACK_SIZE,  FONT_PRIO,  &Font_Task_handler,  &Font_Task_Status  },
 };
 
 #define TASK_NUM_MAX (sizeof(Task_List) / sizeof(Task_List[0]))

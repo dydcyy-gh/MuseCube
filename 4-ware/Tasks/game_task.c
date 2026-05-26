@@ -15,18 +15,23 @@
 
 void Game_Task( void * pvParameters )
 {
+    uint8_t last_L = 0;
+
     Delay_ms(50);
 
     g_lcd_user = LCD_USER_GAME;
     Taskmanager_Ctrl(Task_N_LVGL, Task_T_Suspend, 0);
+    Page_Push_History(Page_Get_Current());
     lv_port_disp_deinit();
     Page_Request_Switch(PAGE_GAME);
 
     nes_init(chosen_file_path);
     chosen_file_path_free();
 
-    while (!g_key_L_M_RT)
+    while (1)
     {
+        if (!g_key_L_M_RT && last_L) break;
+        last_L = g_key_L_M_RT;
         nes_task();
     }
 

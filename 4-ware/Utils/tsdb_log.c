@@ -3,38 +3,78 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include "FreeRTOS.h"
+#include "task.h"
 #include "debug_unit.h"
 #include "usbd_cdc_conf.h"
 #include "malloc.h"
 #include "variables.h"
 
+#define TSDB_QUEUE_SIZE 20
+
+typedef struct {
+    char text[256];
+} tsdb_queue_entry_t;
+
+static tsdb_queue_entry_t *tsdb_queue = NULL;
+static volatile int tsdb_queue_head = 0;
+static volatile int tsdb_queue_tail = 0;
+static volatile int tsdb_queue_count = 0;
+
 void tsdb_printf(const char *format, ...)
 {
-    if (!tsdb.parent.init_ok) return; 
+    if (!tsdb.parent.init_ok) return;
     if (__get_IPSR() != 0) return;
-	
-    char buf[128];
+
+    if (tsdb_queue == NULL) {
+        tsdb_queue = (tsdb_queue_entry_t *)malloc_bsc(sizeof(tsdb_queue_entry_t) * TSDB_QUEUE_SIZE);
+        if (tsdb_queue == NULL) return;
+    }
+
+    char buf[256];
+
     va_list args;
-    
     va_start(args, format);
-    int len = vsnprintf(buf, sizeof(buf) - 2, format, args);
+    int len = vsnprintf(buf, sizeof(buf) - 1, format, args);
     va_end(args);
 
-    if (len > 0) 
-    {
-        if (len >= sizeof(buf) - 2) len = sizeof(buf) - 3;
-        
-        for (int i = 0; i < len; i++) {
-            if (buf[i] == '\r' || buf[i] == '\n') {
-                buf[i] = ' ';
-            }
+    if (len <= 0) return;
+    if (len >= sizeof(buf) - 1) len = sizeof(buf) - 1;
+    buf[len] = '\0';
+
+    taskENTER_CRITICAL();
+    if (tsdb_queue_count < TSDB_QUEUE_SIZE) {
+        strncpy(tsdb_queue[tsdb_queue_head].text, buf, 255);
+        tsdb_queue[tsdb_queue_head].text[255] = '\0';
+        tsdb_queue_head = (tsdb_queue_head + 1) % TSDB_QUEUE_SIZE;
+        tsdb_queue_count++;
+    }
+    taskEXIT_CRITICAL();
+}
+
+void tsdb_log_flush(void)
+{
+    if (tsdb_queue == NULL) return;
+    if (!tsdb.parent.init_ok) return;
+
+    fdb_time_t ts = tsdb.last_time;
+
+    while (tsdb_queue_count > 0) {
+        taskENTER_CRITICAL();
+        if (tsdb_queue_count == 0) {
+            taskEXIT_CRITICAL();
+            break;
         }
-        
-        buf[len++] = '\n';
-        buf[len] = '\0'; 
-        
+        char buf[256];
+        strncpy(buf, tsdb_queue[tsdb_queue_tail].text, 255);
+        buf[255] = '\0';
+        tsdb_queue_tail = (tsdb_queue_tail + 1) % TSDB_QUEUE_SIZE;
+        tsdb_queue_count--;
+        taskEXIT_CRITICAL();
+
+        ts++;
         struct fdb_blob blob;
-        fdb_tsl_append(&tsdb, fdb_blob_make(&blob, buf, len));
+        fdb_tsl_append_with_ts(&tsdb, fdb_blob_make(&blob, buf, strlen(buf)), ts);
     }
 }
 
@@ -46,7 +86,7 @@ typedef enum {
 // 用于存储单条日志的结构体
 typedef struct {
     uint32_t timestamp;
-    char text[128];
+    char text[256];
 } log_record_t;
 
 struct tsdb_read_ctx {
@@ -58,8 +98,8 @@ struct tsdb_read_ctx {
 // 将 Unix 时间戳转换为 HH:MM:SS 字符串（考虑时区偏移）
 static void timestamp_to_hms(uint32_t timestamp, char *buf, size_t buf_len)
 {
-    uint32_t local_seconds = timestamp % 86400; 
-    
+    uint32_t local_seconds = timestamp % 86400;
+
     uint8_t hour = local_seconds / 3600;
     uint8_t minute = (local_seconds % 3600) / 60;
     uint8_t second = local_seconds % 60;
@@ -70,20 +110,20 @@ static void timestamp_to_hms(uint32_t timestamp, char *buf, size_t buf_len)
 static bool tsdb_read_cb(fdb_tsl_t tsl, void *arg)
 {
     struct tsdb_read_ctx *ctx = (struct tsdb_read_ctx *)arg;
-    
+
     if (ctx->current_count >= ctx->max_count) return true; // 读够了就停止
 
     struct fdb_blob blob;
     // 获取当前记录对应的缓冲指针
     log_record_t *record = &ctx->records[ctx->current_count];
-    
+
     record->timestamp = tsl->time;
     memset(record->text, 0, sizeof(record->text));
 
     // 从 FlashDB 中读取日志正文
     fdb_tsl_to_blob(tsl, fdb_blob_make(&blob, record->text, sizeof(record->text)));
     size_t read_len = fdb_blob_read((fdb_db_t)&tsdb, &blob);
-    
+
     if (read_len > 0) {
         if (read_len >= sizeof(record->text)) read_len = sizeof(record->text) - 1;
         record->text[read_len] = '\0';
@@ -94,7 +134,7 @@ static bool tsdb_read_cb(fdb_tsl_t tsl, void *arg)
         }
 
         ctx->current_count++;
-    } 
+    }
     return false; // 继续遍历下一条
 }
 
@@ -103,15 +143,15 @@ static void tsdb_show_recent_forward(int num, tsdb_out_target_t target)
 {
     if (!tsdb.parent.init_ok || num <= 0) return;
 
-    // 使用 CCM 内存临时分配日志缓冲，50条约为 50 * 132 = 6600 Bytes
+    // 使用 CCM 内存临时分配日志缓冲，50条约为 50 * 260 = 13000 Bytes
     log_record_t *records = (log_record_t *)malloc_ccm(sizeof(log_record_t) * num);
     if (records == NULL) {
         // 如果 CCM 内存分配失败，直接返回
-        return; 
+        return;
     }
 
     struct tsdb_read_ctx ctx = { .max_count = num, .current_count = 0, .records = records };
-    
+
     // 逆向查询出最新的 current_count 条日志（此时 records[0] 是最新，records[n] 是最旧）
     fdb_tsl_iter_reverse(&tsdb, tsdb_read_cb, &ctx);
 

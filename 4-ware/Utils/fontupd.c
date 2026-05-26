@@ -1,10 +1,13 @@
 #include "fontupd.h"
-#include "ff.h"	  
-#include "w25q128.h"   
-#include "lcd_bsp.h"  
+#include "ff.h"
+#include "w25q128.h"
+#include "lcd_bsp.h"
 #include "string.h"
 #include "malloc.h"
 #include "systick_conf.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "variables.h"
 
 //lvgl字库读取缓冲区
 uint8_t __g_font_buf[210]; //162
@@ -86,6 +89,11 @@ static uint8_t updata_fontx(uint8_t *fxpath, uint8_t fx, uint32_t start_addr)
         // 写入 Flash
         W25QXX_Write(tempbuf, offx + flashaddr, bread);
         offx += bread;
+
+        if (fx < FONT_CONFIG_COUNT && *(fontConfigs[fx].size) > 0) {
+            g_font_update_progress = (uint8_t)((offx * 100) / *(fontConfigs[fx].size));
+        }
+
         if (bread != 4096) break;
     }
     
@@ -105,6 +113,11 @@ uint8_t update_font(uint8_t* src)
     FIL *fftemp = NULL;
     uint8_t res;
     uint32_t current_flash_addr = FONTINFOADDR + sizeof(ftinfo); // 起始地址
+
+    g_font_update_state = 0;
+    g_font_update_progress = 0;
+    g_font_update_file_index = 0;
+    g_font_update_error = 0;
 
     pname = malloc_bsc(100);
     fftemp = (FIL*)malloc_bsc(sizeof(FIL));
@@ -127,33 +140,50 @@ uint8_t update_font(uint8_t* src)
     }
 
 	// 2. 擦除区域：从 FONTINFOADDR 开始的连续 FONTSECSIZE 字节（7MB）
-	for (uint32_t addr = FONTINFOADDR; addr < FONTINFOADDR + FONTSECSIZE; addr += 4096) 
 	{
-		W25QXX_Erase_Sector(addr);
+		uint32_t total_sectors = FONTSECSIZE / 4096;
+		uint32_t sector_count = 0;
+		g_font_update_state = 1;
+
+		for (uint32_t addr = FONTINFOADDR; addr < FONTINFOADDR + FONTSECSIZE; addr += 4096)
+		{
+			W25QXX_Erase_Sector(addr);
+			sector_count++;
+			g_font_update_progress = (uint8_t)((sector_count * 100) / total_sectors);
+		}
 	}
 
     // 3. 写入文件
+    g_font_update_state = 2;
+    g_font_update_progress = 0;
     for (uint8_t idx = 0; idx < FONT_CONFIG_COUNT; idx++) {
+        g_font_update_file_index = idx;
+        g_font_update_progress = 0;
         strcpy((char*)pname, (char*)src);
         strcat((char*)pname, fontConfigs[idx].path);
-        
+
         // 传入当前计算好的地址
         res = updata_fontx(pname, idx, current_flash_addr);
         if (res) {
             ret = 20 + idx; // 20+: 写入失败错误码
             goto __error;
         }
-        
+
         // 计算下一个文件的起始地址 = 当前地址 + 当前文件大小
-        // 必须确保 current_flash_addr 按 4字节或更优的方式对齐，虽然 W25Q 不强制，但便于管理
         current_flash_addr += *(fontConfigs[idx].size);
     }
 
     // 4. 写入头部信息
+    g_font_update_state = 3;
+    g_font_update_progress = 100;
     ftinfo.fontok = Checksum;
     W25QXX_Write((uint8_t*)&ftinfo, FONTINFOADDR, sizeof(ftinfo));
 
 __error:
+    if (ret) {
+        g_font_update_state = 0xFF;
+        g_font_update_error = ret;
+    }
     if (pname) free_bsc(pname);
     if (fftemp) free_bsc(fftemp);
 

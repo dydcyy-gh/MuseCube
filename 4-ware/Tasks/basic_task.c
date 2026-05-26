@@ -13,6 +13,10 @@
 #include "debug.h"
 #include "lcd_pwm.h"
 #include "sdio_sdcard.h"
+#include "tsdb_log.h"
+#include "kvdb_ctrl.h"
+#include "fontupd.h"
+#include "page_manager.h"
 
 //此task完成以下轮询读取和处理
 
@@ -71,32 +75,32 @@ void Basic_Task( void * pvParameters )
 		}
 
 		//pwm ctrl
-		if(!g_pwm_inited && g_screen_status)
+		if(!g_pwm_inited && kv_screen_status)
 		{
 			LCD_TIM4_PWM_Init();
 			LCD_PWM_SetFreq(10000);
 		}
-		if(g_pwm_inited && !g_screen_status)
+		if(g_pwm_inited && !kv_screen_status)
 		{
 			LCD_PWM_DeInit();
 		}
 		
 		//max98357 ctrl
-		if(!g_max98357_inited && g_max98357_ststus)
+		if(!g_max98357_inited && kv_max98357_ststus)
 		{
 			MAX98357_Init();
 		}
-		if(g_max98357_inited && !g_max98357_ststus)
+		if(g_max98357_inited && !kv_max98357_ststus)
 		{
 			MAX98357_Deinit();
 		}
 		
 		//es9018 ctrl
-		if(!g_es9018_inited && g_es9018_status)
+		if(!g_es9018_inited && kv_es9018_status)
 		{
 			if(ES9018_Init()) ES9018_Deinit();
 		}
-		if(g_es9018_inited && !g_es9018_status)
+		if(g_es9018_inited && !kv_es9018_status)
 		{
 			ES9018_Deinit();
 		}
@@ -107,15 +111,15 @@ void Basic_Task( void * pvParameters )
 			if(!ES9018_Set_BitDepth(music_bitdepth))
 				last_music_bitdepth = music_bitdepth;
 		}
-		if(last_hdp_value != g_hdp_value) 
+		if(last_hdp_value != kv_hdp_value) 
 		{
-			if(!ES9018_Set_Volume(g_hdp_value,g_hdp_value))
-				last_hdp_value = g_hdp_value;
+			if(!ES9018_Set_Volume(kv_hdp_value,kv_hdp_value))
+				last_hdp_value = kv_hdp_value;
 		}
-		if(last_brightness != g_brightness) 
+		if(last_brightness != kv_brightness) 
 		{
-			LCD_PWM_SetDuty(g_brightness);
-			last_brightness = g_brightness;
+			LCD_PWM_SetDuty(kv_brightness);
+			last_brightness = kv_brightness;
 		}
 		
 		ES9018_Update_Register();
@@ -125,7 +129,10 @@ void Basic_Task( void * pvParameters )
             count100ms = 0;
             RTC_Clock_Update();
         }
-        
+
+        tsdb_log_flush();
+        kvdb_persist_flush();
+
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
     }
 }

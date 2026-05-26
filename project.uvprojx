@@ -924,6 +924,26 @@
               <FileType>5</FileType>
               <FilePath>.\4-ware\Utils\v2p_bat.h</FilePath>
             </File>
+            <File>
+              <FileName>fontupd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\Utils\fontupd.c</FilePath>
+            </File>
+            <File>
+              <FileName>fontupd.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\Utils\fontupd.h</FilePath>
+            </File>
+            <File>
+              <FileName>kvdb_ctrl.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\Utils\kvdb_ctrl.c</FilePath>
+            </File>
+            <File>
+              <FileName>kvdb_ctrl.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\Utils\kvdb_ctrl.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -968,6 +988,11 @@
               <FileName>video_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\4-ware\Tasks\video_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>font_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\Tasks\font_task.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1509,6 +1534,26 @@
               <FileType>5</FileType>
               <FilePath>.\4-ware\GUI_Page\album_page.h</FilePath>
             </File>
+            <File>
+              <FileName>font_update_page.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\GUI_Page\font_update_page.c</FilePath>
+            </File>
+            <File>
+              <FileName>font_update_page.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\GUI_Page\font_update_page.h</FilePath>
+            </File>
+            <File>
+              <FileName>serial_page.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\GUI_Page\serial_page.c</FilePath>
+            </File>
+            <File>
+              <FileName>serial_page.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\GUI_Page\serial_page.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1793,6 +1838,26 @@
               <FileName>album_unit.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\4-ware\GUI_Unit\album_unit.h</FilePath>
+            </File>
+            <File>
+              <FileName>font_update_unit.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\GUI_Unit\font_update_unit.c</FilePath>
+            </File>
+            <File>
+              <FileName>font_update_unit.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\GUI_Unit\font_update_unit.h</FilePath>
+            </File>
+            <File>
+              <FileName>serial_unit.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\4-ware\GUI_Unit\serial_unit.c</FilePath>
+            </File>
+            <File>
+              <FileName>serial_unit.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\4-ware\GUI_Unit\serial_unit.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -2993,16 +3058,6 @@
               <FileName>Font24.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\4-ware\Lib_LVGL\font\Font24.c</FilePath>
-            </File>
-            <File>
-              <FileName>fontupd.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\4-ware\Lib_LVGL\font\fontupd.c</FilePath>
-            </File>
-            <File>
-              <FileName>fontupd.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>.\4-ware\Lib_LVGL\font\fontupd.h</FilePath>
             </File>
             <File>
               <FileName>lv_font.c</FileName>

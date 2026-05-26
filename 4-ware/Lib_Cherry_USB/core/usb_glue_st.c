@@ -38,6 +38,10 @@ const struct dwc2_user_params param_pa11_pa12 = {
     .total_fifo_size = 320 // 1280 byte
 };
 
+//0x01 (OUT)：承担所有下行大数据（UAC 音频流、Display 图像流、MSC 写 U 盘、CDC 收数据、Gamepad 震动反馈）。
+//0x81 (IN)：承担所有上行大数据（MSC 读 U盘、CDC 发数据、所有 HID 设备的按键上报、Display 触摸/应答）。
+//0x82 (IN)：承担所有上行微小数据（CDC 的状态中断 INT，UAC1/2 的时钟反馈 Feedback）。
+
 const struct dwc2_user_params param_pb14_pb15 = {
 #ifdef CONFIG_USB_HS
     .phy_type = DWC2_PHY_TYPE_PARAM_UTMI,
@@ -50,14 +54,18 @@ const struct dwc2_user_params param_pb14_pb15 = {
     .device_dma_enable = false,
 #endif
     .device_dma_desc_enable = false,
-    .device_rx_fifo_size = (1006 - 16 - 256 - 128 - 128 - 128 - 128), // 1006/1012
+    
+    // 【RX FIFO 极致容量】：2048 字节，再大的 UAC 数据包也不怕
+    .device_rx_fifo_size = 512, 
+    
+    // 【TX FIFO 集中分配】
     .device_tx_fifo_size = {
-        [0] = 16,  // 64 byte
-        [1] = 256, // 1024 byte
-        [2] = 128, // 512 byte
-        [3] = 128, // 512 byte
-        [4] = 128, // 512 byte
-        [5] = 128, // 512 byte
+        [0] = 32,   // EP0: 128 Bytes
+        [1] = 256,  // EP1 (0x81): 1536 Bytes，主数据通道的超级狂飙缓存！
+        [2] = 32,   // EP2 (0x82): 128 Bytes，中断/反馈通道
+        [3] = 16,   
+        [4] = 16,
+        [5] = 16,
         [6] = 0,
         [7] = 0,
         [8] = 0,
@@ -67,14 +75,15 @@ const struct dwc2_user_params param_pb14_pb15 = {
         [12] = 0,
         [13] = 0,
         [14] = 0,
-        [15] = 0 },
+        [15] = 0 
+    },
 
     .host_dma_desc_enable = false,
     .host_rx_fifo_size = 622,
-    .host_nperio_tx_fifo_size = 128, // 512 byte
-    .host_perio_tx_fifo_size = 256,  // 1024 byte
-    .device_gccfg = ((1 << 16) | (1 << 21)), // fs: USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_NOVBUSSENS hs:0
-    .host_gccfg = ((1 << 16) | (1 << 21))    // fs: USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_NOVBUSSENS hs:0
+    .host_nperio_tx_fifo_size = 128, 
+    .host_perio_tx_fifo_size = 256,  
+    .device_gccfg = ((1 << 16) | (1 << 21)), 
+    .host_gccfg = ((1 << 16) | (1 << 21))    
 };
 
 #endif // CONFIG_USB_DWC2_CUSTOM_PARAM

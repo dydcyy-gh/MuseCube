@@ -18,7 +18,7 @@
 #include "lv_port_disp.h"
 
 #define DISPLAY_IN_EP  0x81
-#define DISPLAY_OUT_EP 0x02
+#define DISPLAY_OUT_EP 0x01
 
 #define USBD_VID           0x303A
 #define USBD_PID           0x2987
@@ -116,6 +116,7 @@ void usb_display_init(uint8_t busid, uintptr_t reg_base)
 {
 	g_lcd_user = LCD_USER_DISP;
 	Taskmanager_Ctrl(Task_N_LVGL, Task_T_Suspend, 0);
+	Page_Push_History(Page_Get_Current());
 	lv_port_disp_deinit();
 	Page_Request_Switch(PAGE_DISPLAY);
 	
@@ -154,6 +155,13 @@ void usb_display_deinit(void)
 
 void usb_display_task(void)
 {
+    static uint8_t last_L = 0;
+
+    if (!g_key_L_M_RT && last_L) {
+        g_usb_function = USB_NONE;
+    }
+    last_L = g_key_L_M_RT;
+
     struct usbd_display_frame *frame;
     int ret;
 

@@ -10,6 +10,7 @@
 #include "ff.h"
 #include "lrc.h"
 #include "malloc.h"
+#include "kvdb_ctrl.h"
 
 // Extern image resources
 extern const lv_img_dsc_t music_before;
@@ -108,8 +109,9 @@ static void music_icon_event_handler(lv_event_t * e) {
 			Page_Request_Switch(PAGE_FILE,"0:/MUSIC");
 			break;
 		case 3: // Mode Switch
-			Music_Switch_Method++;
-			if(Music_Switch_Method > 2) Music_Switch_Method = 0;
+			kv_music_switch_method++;
+			if(kv_music_switch_method > 2) kv_music_switch_method = 0;
+			kvdb_persist_mark(KV_IDX_kv_music_switch_method);
 			break;
 		case 4: // Like
 			ms->like_state = !ms->like_state;
@@ -274,8 +276,8 @@ void Create_Music_Unit(void)
 	create_icon_btn(ms->music_unit, &music_menu, 206, 42, 2);
 
 	const void *mode_src = &music_order;
-	if (Music_Switch_Method == Play_Randomly) mode_src = &music_random;
-	else if (Music_Switch_Method == Play_Repeatly) mode_src = &music_cycle;
+	if (kv_music_switch_method == Play_Randomly) mode_src = &music_random;
+	else if (kv_music_switch_method == Play_Repeatly) mode_src = &music_cycle;
 	ms->btn_mode = create_icon_btn(ms->music_unit, mode_src, 206, 74, 3);
 
 	ms->btn_like = create_icon_btn(ms->music_unit, &music_like, 206, 106, 4);
@@ -410,9 +412,9 @@ void Update_Music_Unit(void)
 
 	// Update Mode Icon
 	if(ms->btn_mode) {
-		if (Music_Switch_Method == Play_In_Order) lv_img_set_src(ms->btn_mode, &music_order);
-		else if (Music_Switch_Method == Play_Randomly) lv_img_set_src(ms->btn_mode, &music_random);
-		else if (Music_Switch_Method == Play_Repeatly) lv_img_set_src(ms->btn_mode, &music_cycle);
+		if (kv_music_switch_method == Play_In_Order) lv_img_set_src(ms->btn_mode, &music_order);
+		else if (kv_music_switch_method == Play_Randomly) lv_img_set_src(ms->btn_mode, &music_random);
+		else if (kv_music_switch_method == Play_Repeatly) lv_img_set_src(ms->btn_mode, &music_cycle);
 	}
 
 	// Update Play/Pause Icon
