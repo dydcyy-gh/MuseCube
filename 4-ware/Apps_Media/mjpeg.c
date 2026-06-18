@@ -48,7 +48,7 @@ static void flush_line_buffer(void) {
 
     // 1. 如果上次的 DMA 还在传输，必须等待它完成，防止覆盖数据
     if (dma_busy) {
-        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_VDEO, pdTRUE, pdFALSE, portMAX_DELAY);
+        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, portMAX_DELAY);
         dma_busy = 0;
     }
 
@@ -179,7 +179,7 @@ uint8_t video_mjpeg_play_task(void) {
     // 确保当前帧的最后一个 DMA 传输完成，再退出任务
     // 防止下一帧立马开始解码覆盖了还在传输的缓冲区
     if (dma_busy) {
-        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_VDEO, pdTRUE, pdFALSE, portMAX_DELAY);
+        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, portMAX_DELAY);
         dma_busy = 0;
     }
 
@@ -193,7 +193,7 @@ void video_mjpeg_play_deinit(void)
 
     // 退出前确保没有未完成的DMA传输
     if (dma_busy) {
-        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_VDEO, pdTRUE, pdFALSE, portMAX_DELAY);
+        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, portMAX_DELAY);
         dma_busy = 0;
     }
 

@@ -3,6 +3,25 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Renamed DFU_PROTOCOL_MODE to DFU_PROTOCOL_DFU (line 26) for consistency with STM32 DFU naming conventions.
+ * Added DFU_NOTIFICATION_* defines (lines 79-85) for application-layer download/upload signal callbacks (begin, end, abort).
+ * Added DFU_MEDIA_STATUS_* defines (lines 88-90) to report flash media operation results (OK, BUSY, ERROR).
+ * Replaced generic DFU_CMD_GETCOMMANDS/DFU_CMD_SETADDRESSPOINTER/DFU_CMD_ERASE defines with STM32-specific DFU_SPECIAL_CMD_SET_ADDRESS_POINTER, DFU_SPECIAL_CMD_ERASE, and added DFU_SPECIAL_READ_UNPROTECT (lines 92-95), matching STM32 DFU 1.1 special command values (wValue = 0).
+ * Removed unused DFU_MEDIA_ERASE and DFU_MEDIA_PROGRAM defines.
+ * Renamed struct dfu_info to struct dfu_status (line 108) for descriptor-level naming alignment.
+ * Changed bwPollTimeout from two uint8_t fields (bPollTimeout + wPollTimeout) to a single uint32_t (line 111), simplifying timeout handling.
+ * Added DFU_DESCRIPTOR_LEN define (line 118) to expose total descriptor length.
+ * Refactored DFU_DESCRIPTOR_INIT to accept a str_idx parameter (line 121) instead of hardcoding 0x04, enabling dynamic interface string index assignment.
+ * Replaced literal 0x01/0x02 with DFU_SUBCLASS_DFU / DFU_PROTOCOL_DFU symbolic constants in the descriptor macro (lines 128-129).
+ * Replaced hardcoded USBD_DFU_XFER_SIZE with CONFIG_USBDEV_REQUEST_BUFFER_LEN (line 136) for configurable transfer buffer sizing.
+ * Replaced hardcoded 0x011a bcdDFUVersion with DFU_VERSION (line 137), referencing the existing version define.
+ * Removed DFU_MANIFEST_COMPLETE and DFU_MANIFEST_IN_PROGRESS defines.
+ * Removed DFU_DETACH_MASK and DFU_MANIFEST_MASK defines.
+ * Applied #pragma once include guard (line 6) in addition to #ifndef/#endif guard.
+ * Removed Doxygen /** @{ */ and @} */ group markers (lines 9,14) and /**\brief annotations on descriptor fields.
+ * === End MuseCube modification === */
 #ifndef USB_DFU_H
 #define USB_DFU_H
 

@@ -3,6 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Simplified DIV_ROUND_CLOSEST macro: replaced the GCC statement-expression
+ * implementation (which uses typeof() and ({...}), unsupported by Arm Compiler 5)
+ * with a straightforward division formula that compiles under armcc.
+ * === End MuseCube modification === */
 #ifndef USB_UTIL_H
 #define USB_UTIL_H
 

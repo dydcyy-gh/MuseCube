@@ -38,6 +38,7 @@ extern __flacctrl * flacctrl;
 uint8_t flac_init(FIL* fx, __flacctrl* fctrl);
 void flac_i2s_dma_tx_callback(void);
 void flac_get_curtime(FIL*fx,__flacctrl *flacx);
+uint32_t flac_file_seek(uint32_t pos);
 void flac_play_song_task(uint8_t* fname);
 
 #endif

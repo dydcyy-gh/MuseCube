@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added `#pragma diag_suppress 177` after includes to suppress Arm Compiler 5 diagnostic warning #177 (function was declared but never referenced), which is emitted by the `lshid` command function and `hid_get_itemval` when unused. The original CherryUSB code targets GCC/Clang toolchains where this warning does not appear.
+ * === End MuseCube modification === */
 #include "usbh_core.h"
 #include "usbh_hid.h"
 
@@ -573,7 +577,11 @@ void usbh_hid_report_free(struct hid_report *hid_report)
     }
 }
 
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_hid_report_buf[2048];
+/* === MuseCube modification ===
+ * Reduced from 2048 to 512 bytes: HID report descriptors are typically 64-256 bytes,
+ * 512 is sufficient for any standard HID device. Saves 1536 bytes of static RAM.
+ * === End MuseCube modification === */
+USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_hid_report_buf[512];
 
 static const char *hid_property_string(uint32_t value)
 {

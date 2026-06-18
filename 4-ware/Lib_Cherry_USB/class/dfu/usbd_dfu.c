@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Stripped the file down to a minimal DFU state-machine skeleton, removing approximately 250 lines. Removed USBD_DFU_XFER_SIZE, USBD_DFU_APP_DEFAULT_ADD, FLASH_PROGRAM_TIME, and FLASH_ERASE_TIME configuration macros and their associated uses. Replaced the large struct usbd_dfu_priv (with buffer, wblock_num, wlength, data_ptr, alt_setting, dev_status, dev_state, manif_state, firmwar_flag fields) with a minimal struct containing only single uint8_t dfu_state. Replaced all internal state-machine functions (dfu_reset, dfu_getstatus, dfu_request_detach, dfu_request_upload, dfu_request_dnload, dfu_getstatus_special_handler, dfu_request_getstatus, dfu_request_clrstatus, dfu_request_getstate, dfu_request_abort) with a single flat state-machine inside dfu_class_interface_request_handler that dispatches on dfu_state and then on bRequest. Replaced the four __WEAK low-level callbacks (dfu_read_flash, dfu_write_flash, dfu_erase_flash, dfu_leave) with five new __WEAK callbacks: usbd_dfu_begin_load, usbd_dfu_end_load, usbd_dfu_reset, usbd_dfu_write, usbd_dfu_read. Changed dfu_read_flash return type from uint8_t* to int (via usbd_dfu_read with actual_length out-parameter). Added usbd_dfu_state_string[] debug-name table. Added public accessor usbd_dfu_get_state(). Updated dfu_notify_handler to set dfu_state instead of calling removed dfu_reset(). Updated copyright year range from "2022" to "2022 ~ 2026".
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_dfu.h"
 

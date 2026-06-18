@@ -3,6 +3,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed W3C cross-reference comments: Stripped the table header comments ("Bit position = W3C button index ...") and per-platform mapping comments (XInput/Switch/PS3/4/5/DInput columns) from all USB_GAMEPAD_BUTTON_* defines, retaining only the primary button name after each value.
+ * Simplified XInput LED defines: Reduced the set from 14 entries (XINPUT_LED_OFF through XINPUT_LED_BLINK_SLOW_2) down to 2 entries (XINPUT_LED_OFF and XINPUT_LED_BLINK).
+ * Removed Switch controller section: Deleted all Switch-specific defines (SWITCH_VID, SWITCH_PID, SWITCH_BCD_DEVICE, SWITCH_MASK_* bitmasks, SWITCH_HAT_* D-pad values, SWITCH_JOYSTICK_* range macros), both switch_in_report and switch_out_report structs, HID_SWITCH_REPORT_DESC_SIZE, SWITCH_DESCRIPTOR_LEN, and SWITCH_DESCRIPTOR_INIT macro.
+ * Removed XInput unused-button comment: Deleted the commented-out `//#define XINPUT_BUTTON_MASK_UNUSED` line and its associated blank line.
+ * Changed analog stick type in usb_gamepad_report: Modified the lx/ly/rx/ry members from uint8_t to int8_t, enabling signed range (-128 to +127) to represent centered (0) stick position, with a comment "修改为 int8_t, 范围 -128 到 +127, 完美对应修改后的摇杆" (changed to int8_t, range -128 to +127, perfectly matches the modified joystick).
+ * Removed the XINPUT_LED_FLASH_* through XINPUT_LED_BLINK_SLOW_2 LED pattern defines (12 entries removed).
+ * === End MuseCube modification === */
 #ifndef USB_GAMEPAD_H
 #define USB_GAMEPAD_H
 

@@ -6,6 +6,7 @@
 #include "usbh_core.h"
 #include "usbh_rndis.h"
 #include "rndis_protocol.h"
+#include "malloc.h"
 
 #undef USB_DBG_TAG
 #define USB_DBG_TAG "usbh_rndis"
@@ -13,7 +14,14 @@
 
 #define DEV_FORMAT "/dev/rndis"
 
-USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_rndis_buf[512];
+/* === MuseCube modification ===
+ * Replaced static g_rndis_buf[512] with heap-allocated buffer. The RNDIS
+ * control buffer is only used during initialization (a few transfers), so
+ * allocating on demand from TLSF saves 512 bytes of static RAM. The buffer
+ * persists after first alloc since g_rndis_buf pointer is static.
+ * === End MuseCube modification === */
+static uint8_t *g_rndis_buf = NULL;
+#define RNDIS_BUF_SIZE 512
 
 #define CONFIG_USBHOST_RNDIS_ETH_MAX_FRAME_SIZE 1514
 #define CONFIG_USBHOST_RNDIS_ETH_MSG_SIZE       (CONFIG_USBHOST_RNDIS_ETH_MAX_FRAME_SIZE + 44)
@@ -49,6 +57,9 @@ static int usbh_rndis_init_msg_transfer(struct usbh_rndis *rndis_class)
     if (!rndis_class || !rndis_class->hport) {
         return -USB_ERR_INVAL;
     }
+    if (!g_rndis_buf) g_rndis_buf = malloc_bsc(RNDIS_BUF_SIZE);
+    if (!g_rndis_buf) return -USB_ERR_NOMEM;
+
     setup = rndis_class->hport->setup;
 
     cmd = (rndis_initialize_msg_t *)g_rndis_buf;
@@ -80,7 +91,7 @@ static int usbh_rndis_init_msg_transfer(struct usbh_rndis *rndis_class)
     setup->bRequest = CDC_REQUEST_GET_ENCAPSULATED_RESPONSE;
     setup->wValue = 0;
     setup->wIndex = 0;
-    setup->wLength = sizeof(g_rndis_buf);
+    setup->wLength = RNDIS_BUF_SIZE;
 
     ret = usbh_control_transfer(rndis_class->hport, setup, (uint8_t *)resp);
     if (ret < 0) {
@@ -106,6 +117,9 @@ int usbh_rndis_query_msg_transfer(struct usbh_rndis *rndis_class, uint32_t oid, 
     if (!rndis_class || !rndis_class->hport) {
         return -USB_ERR_INVAL;
     }
+    if (!g_rndis_buf) g_rndis_buf = malloc_bsc(RNDIS_BUF_SIZE);
+    if (!g_rndis_buf) return -USB_ERR_NOMEM;
+
     setup = rndis_class->hport->setup;
 
     cmd = (rndis_query_msg_t *)g_rndis_buf;
@@ -138,7 +152,7 @@ int usbh_rndis_query_msg_transfer(struct usbh_rndis *rndis_class, uint32_t oid, 
     setup->bRequest = CDC_REQUEST_GET_ENCAPSULATED_RESPONSE;
     setup->wValue = 0;
     setup->wIndex = 0;
-    setup->wLength = sizeof(g_rndis_buf);
+    setup->wLength = RNDIS_BUF_SIZE;
 
     ret = usbh_control_transfer(rndis_class->hport, setup, (uint8_t *)resp);
     if (ret < 0) {
@@ -162,6 +176,9 @@ static int usbh_rndis_set_msg_transfer(struct usbh_rndis *rndis_class, uint32_t 
     if (!rndis_class || !rndis_class->hport) {
         return -USB_ERR_INVAL;
     }
+    if (!g_rndis_buf) g_rndis_buf = malloc_bsc(RNDIS_BUF_SIZE);
+    if (!g_rndis_buf) return -USB_ERR_NOMEM;
+
     setup = rndis_class->hport->setup;
 
     cmd = (rndis_set_msg_t *)g_rndis_buf;
@@ -195,7 +212,7 @@ static int usbh_rndis_set_msg_transfer(struct usbh_rndis *rndis_class, uint32_t 
     setup->bRequest = CDC_REQUEST_GET_ENCAPSULATED_RESPONSE;
     setup->wValue = 0;
     setup->wIndex = 0;
-    setup->wLength = sizeof(g_rndis_buf);
+    setup->wLength = RNDIS_BUF_SIZE;
 
     ret = usbh_control_transfer(rndis_class->hport, setup, (uint8_t *)resp);
     if (ret < 0) {
@@ -234,6 +251,9 @@ int usbh_rndis_keepalive(struct usbh_rndis *rndis_class)
     if (!rndis_class || !rndis_class->hport) {
         return -USB_ERR_INVAL;
     }
+    if (!g_rndis_buf) g_rndis_buf = malloc_bsc(RNDIS_BUF_SIZE);
+    if (!g_rndis_buf) return -USB_ERR_NOMEM;
+
     setup = rndis_class->hport->setup;
 
     cmd = (rndis_keepalive_msg_t *)g_rndis_buf;
@@ -262,7 +282,7 @@ int usbh_rndis_keepalive(struct usbh_rndis *rndis_class)
     setup->bRequest = CDC_REQUEST_GET_ENCAPSULATED_RESPONSE;
     setup->wValue = 0;
     setup->wIndex = 0;
-    setup->wLength = sizeof(g_rndis_buf);
+    setup->wLength = RNDIS_BUF_SIZE;
 
     ret = usbh_control_transfer(rndis_class->hport, setup, (uint8_t *)resp);
     if (ret < 0) {

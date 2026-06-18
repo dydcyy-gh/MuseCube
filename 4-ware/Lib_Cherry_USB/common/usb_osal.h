@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added declaration for usb_osal_sem_create_counting(uint32_t max_count) at line 48,
+ * providing counting-semaphore creation alongside the existing binary-semaphore
+ * creation (usb_osal_sem_create). This enables use cases that require a semaphore
+ * with a configurable maximum count, such as managing multiple shared resources.
+ * === End MuseCube modification === */
 #ifndef USB_OSAL_H
 #define USB_OSAL_H
 

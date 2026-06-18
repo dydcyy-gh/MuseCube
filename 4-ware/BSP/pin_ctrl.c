@@ -160,8 +160,10 @@ void I2S_Exchange_Ctrl(uint8_t status) //0-耳机  1-喇叭
 {
 	if(status == 0) GPIO_ResetBits(GPIOB, GPIO_Pin_11);
 	else GPIO_SetBits(GPIOB, GPIO_Pin_11);
-	kv_hdp0_or_spk1 = status;
-	kvdb_persist_mark(KV_IDX_kv_hdp0_or_spk1);
+	if (kv_hdp0_or_spk1 != status) {
+		kv_hdp0_or_spk1 = status;
+		kvdb_persist_mark(KV_IDX_kv_hdp0_or_spk1);
+	}
 }
 
 //USB向外供电 USB_EN PA12

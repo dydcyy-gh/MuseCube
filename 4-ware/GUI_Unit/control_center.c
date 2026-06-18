@@ -5,6 +5,9 @@
 #include "pin_ctrl.h"
 #include "malloc.h"
 #include "kvdb_ctrl.h"
+#include "music.h"
+#include "page_manager.h"
+#include "keyboard.h"
 
 extern const lv_img_dsc_t control_light;
 extern const lv_img_dsc_t control_headphone;
@@ -16,6 +19,19 @@ typedef struct {
 	lv_obj_t * ctrl_center_cont;
 	lv_obj_t * btn_close;
 	lv_obj_t * bg_cover;
+
+	// 新增：音乐后台管理容器及内部对象
+	lv_obj_t * music_ctrl_cont;
+	lv_obj_t * label_music_info;
+	lv_obj_t * btn_music_close;
+	uint8_t last_music_suspend;
+	char last_music_name[64];
+
+	// 新增：USB后台管理容器及内部对象
+	lv_obj_t * usb_ctrl_cont;
+	lv_obj_t * label_usb_info;
+	lv_obj_t * btn_usb_close;
+	uint8_t last_usb_function;
 
 	lv_obj_t * switch_bg;
 	lv_obj_t * switch_knob;
@@ -47,10 +63,32 @@ static cc_state_t *cc = NULL;
 // 内部函数声明
 static void bg_cover_event_cb(lv_event_t * e);
 static void btn_close_event_cb(lv_event_t * e);
+static void btn_music_close_event_cb(lv_event_t * e); 
+static void btn_usb_close_event_cb(lv_event_t * e); 
 static void btn_pwr_event_cb(lv_event_t * e);
 static void custom_switch_event_cb(lv_event_t * e);
 static void slider_value_event_cb(lv_event_t * e);
 static void update_controls_state(void);
+
+// 获取USB模式对应的名称
+static const char *get_usb_func_name(uint8_t func) {
+	switch(func) {
+		case USBD_LOG:  return "日志输出";
+		case USBD_CMD:  return "虚拟串口";
+		case USBD_MSC:  return "虚拟U盘";
+		case USBD_UAC1: return "解码耳放(UAC1)";
+		case USBD_UAC2: return "解码耳放(UAC2)";
+		case USBD_DISP: return "电脑投屏";
+		case USBD_GMPD: return "模拟手柄";
+		case USBD_KBD:  return "模拟键盘";
+		case USBD_MOU:  return "模拟鼠标";
+		case USBH_CDC:  return "主机(CDC)";
+		case USBH_MSC:  return "U盘读取";
+		case USBH_GMPD: return "手柄读取";
+		case USBH_HID:  return "键鼠输入";
+		default: return "未知功能";
+	}
+}
 
 // 初始化通用 UI 样式
 static void init_custom_styles(void)
@@ -147,6 +185,85 @@ void Create_Control_Center(void)
 	lv_obj_align(img_close, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_style_img_recolor(img_close, lv_color_black(), 0);
 	lv_obj_set_style_img_recolor_opa(img_close, LV_OPA_COVER, 0);
+
+	// ---- 动态分配后台面板的高度 ----
+	int current_offset_y = 100;
+
+	// ---- 新增音乐后台管理面板 ----
+	if (Music_Status != Music_None) {
+		current_offset_y -= 40; // 向上偏移40px
+
+		cc->last_music_suspend = 0xFF;
+		cc->last_music_name[0] = '\0';
+
+		cc->music_ctrl_cont = lv_obj_create(lv_layer_top());
+		lv_obj_set_size(cc->music_ctrl_cont, 200, 30);
+		lv_obj_set_pos(cc->music_ctrl_cont, 20, current_offset_y);
+		lv_obj_clear_flag(cc->music_ctrl_cont, LV_OBJ_FLAG_SCROLLABLE);
+		lv_obj_add_flag(cc->music_ctrl_cont, LV_OBJ_FLAG_CLICKABLE);
+		lv_obj_add_style(cc->music_ctrl_cont, &cc->style_cont, LV_PART_MAIN);
+
+		cc->label_music_info = lv_label_create(cc->music_ctrl_cont);
+		lv_obj_set_width(cc->label_music_info, 150);
+		lv_label_set_long_mode(cc->label_music_info, LV_LABEL_LONG_SCROLL_CIRCULAR);
+		if (music_info.music_name != NULL) {
+			if (Music_Suspend_Flag) {
+				lv_label_set_text_fmt(cc->label_music_info, "暂停: %s", music_info.music_name);
+			} else {
+				lv_label_set_text_fmt(cc->label_music_info, "播放: %s", music_info.music_name);
+			}
+			strncpy(cc->last_music_name, music_info.music_name, 63);
+			cc->last_music_name[63] = '\0';
+		} else {
+			lv_label_set_text(cc->label_music_info, "音乐运行中...");
+		}
+		cc->last_music_suspend = Music_Suspend_Flag;
+		lv_obj_align(cc->label_music_info, LV_ALIGN_LEFT_MID, 10, 0);
+
+		cc->btn_music_close = lv_btn_create(cc->music_ctrl_cont);
+		lv_obj_set_size(cc->btn_music_close, 20, 20);
+		lv_obj_align(cc->btn_music_close, LV_ALIGN_RIGHT_MID, -10, 0);
+		lv_obj_add_style(cc->btn_music_close, &cc->style_btn_close, LV_PART_MAIN);
+		lv_obj_add_event_cb(cc->btn_music_close, btn_music_close_event_cb, LV_EVENT_CLICKED, NULL);
+
+		lv_obj_t * img_m_close = lv_img_create(cc->btn_music_close);
+		lv_img_set_src(img_m_close, &control_exit);
+		lv_obj_align(img_m_close, LV_ALIGN_CENTER, 0, 0);
+		lv_obj_set_style_img_recolor(img_m_close, lv_color_black(), 0);
+		lv_obj_set_style_img_recolor_opa(img_m_close, LV_OPA_COVER, 0);
+	}
+
+	// ---- 新增USB后台管理面板 ----
+	if (g_usb_function != USB_NONE) {
+		current_offset_y -= 40; // 再次向上偏移40px
+
+		cc->last_usb_function = g_usb_function;
+
+		cc->usb_ctrl_cont = lv_obj_create(lv_layer_top());
+		lv_obj_set_size(cc->usb_ctrl_cont, 200, 30);
+		lv_obj_set_pos(cc->usb_ctrl_cont, 20, current_offset_y);
+		lv_obj_clear_flag(cc->usb_ctrl_cont, LV_OBJ_FLAG_SCROLLABLE);
+		lv_obj_add_flag(cc->usb_ctrl_cont, LV_OBJ_FLAG_CLICKABLE);
+		lv_obj_add_style(cc->usb_ctrl_cont, &cc->style_cont, LV_PART_MAIN);
+
+		cc->label_usb_info = lv_label_create(cc->usb_ctrl_cont);
+		lv_obj_set_width(cc->label_usb_info, 150);
+		lv_label_set_long_mode(cc->label_usb_info, LV_LABEL_LONG_SCROLL_CIRCULAR);
+		lv_label_set_text_fmt(cc->label_usb_info, "USB: %s", get_usb_func_name(g_usb_function));
+		lv_obj_align(cc->label_usb_info, LV_ALIGN_LEFT_MID, 10, 0);
+
+		cc->btn_usb_close = lv_btn_create(cc->usb_ctrl_cont);
+		lv_obj_set_size(cc->btn_usb_close, 20, 20);
+		lv_obj_align(cc->btn_usb_close, LV_ALIGN_RIGHT_MID, -10, 0);
+		lv_obj_add_style(cc->btn_usb_close, &cc->style_btn_close, LV_PART_MAIN);
+		lv_obj_add_event_cb(cc->btn_usb_close, btn_usb_close_event_cb, LV_EVENT_CLICKED, NULL);
+
+		lv_obj_t * img_u_close = lv_img_create(cc->btn_usb_close);
+		lv_img_set_src(img_u_close, &control_exit);
+		lv_obj_align(img_u_close, LV_ALIGN_CENTER, 0, 0);
+		lv_obj_set_style_img_recolor(img_u_close, lv_color_black(), 0);
+		lv_obj_set_style_img_recolor_opa(img_u_close, LV_OPA_COVER, 0);
+	}
 
 	// 4. 左侧自定义垂直滑块
 	cc->switch_bg = lv_obj_create(cc->ctrl_center_cont);
@@ -286,6 +403,12 @@ void Remove_Control_Center(void)
 	if (cc->ctrl_center_cont != NULL) {
 		lv_obj_del(cc->ctrl_center_cont);
 	}
+	if (cc->music_ctrl_cont != NULL) {
+		lv_obj_del(cc->music_ctrl_cont);
+	}
+	if (cc->usb_ctrl_cont != NULL) {
+		lv_obj_del(cc->usb_ctrl_cont);
+	}
 	if (cc->bg_cover != NULL) {
 		lv_obj_del(cc->bg_cover);
 	}
@@ -296,6 +419,55 @@ void Remove_Control_Center(void)
 
 void Update_Control_Center(void)
 {
+	if (cc == NULL) return;
+
+	// 同步音乐栏播放状态及歌名
+	if (cc->music_ctrl_cont != NULL) {
+		if (Music_Status == Music_None) {
+			lv_obj_del(cc->music_ctrl_cont);
+			cc->music_ctrl_cont = NULL;
+		} else {
+			bool name_changed = false;
+			if (music_info.music_name != NULL) {
+				if (strncmp(cc->last_music_name, music_info.music_name, 63) != 0) {
+					strncpy(cc->last_music_name, music_info.music_name, 63);
+					cc->last_music_name[63] = '\0';
+					name_changed = true;
+				}
+			} else {
+				if (cc->last_music_name[0] != '\0') {
+					cc->last_music_name[0] = '\0';
+					name_changed = true;
+				}
+			}
+
+			if (cc->last_music_suspend != Music_Suspend_Flag || name_changed) {
+				cc->last_music_suspend = Music_Suspend_Flag;
+				if (music_info.music_name != NULL) {
+					if (Music_Suspend_Flag) {
+						lv_label_set_text_fmt(cc->label_music_info, "暂停: %s", music_info.music_name);
+					} else {
+						lv_label_set_text_fmt(cc->label_music_info, "播放: %s", music_info.music_name);
+					}
+				} else {
+					lv_label_set_text(cc->label_music_info, "音乐运行中...");
+				}
+			}
+		}
+	}
+
+	// 同步USB栏状态
+	if (cc->usb_ctrl_cont != NULL) {
+		if (g_usb_function == USB_NONE) {
+			lv_obj_del(cc->usb_ctrl_cont);
+			cc->usb_ctrl_cont = NULL;
+		} else {
+			if (cc->last_usb_function != g_usb_function) {
+				cc->last_usb_function = g_usb_function;
+				lv_label_set_text_fmt(cc->label_usb_info, "USB: %s", get_usb_func_name(g_usb_function));
+			}
+		}
+	}
 }
 
 // ---------------- 内部回调与状态更新实现 ----------------
@@ -328,6 +500,24 @@ static void update_controls_state(void)
 
 static void btn_close_event_cb(lv_event_t * e)
 {
+	Remove_Control_Center();
+}
+
+// 音乐控制器退出按钮回调
+static void btn_music_close_event_cb(lv_event_t * e)
+{
+	if (Page_Get_Current() == PAGE_MUSIC) {
+		Page_Request_Switch(PAGE_DESKTOP);
+	}
+	Music_Status = Song_Error; // 使用 Song_Error 使音频任务正常回收内存资源
+	Remove_Control_Center();
+}
+
+// USB控制器退出按钮回调
+static void btn_usb_close_event_cb(lv_event_t * e)
+{
+	g_usb_function = USB_NONE;
+	Remove_Keyboard(); // 释放在 USB 键盘模式可能分配的虚拟键盘组件内存
 	Remove_Control_Center();
 }
 

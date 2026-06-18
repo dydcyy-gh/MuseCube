@@ -33,7 +33,7 @@ typedef struct {
 #define PAGE_NOTE        9
 #define PAGE_FILE        10
 #define PAGE_GAME        11
-#define PAGE_VIDEO       12
+#define PAGE_MEDIA       12
 #define PAGE_DISPLAY     13
 #define PAGE_SETTINGS    14
 #define PAGE_TEXT        15
@@ -59,6 +59,7 @@ typedef struct {
 void Page_Manager_Init(void);
 void Page_Manager_Loop(void);
 uint32_t Page_Get_Current(void);
+uint32_t Page_Get_Next(void);
 void Page_Manager_Deinit(void);
 
 // 内部实现函数（不要直接调用，使用可变参数吸收多余的NULL）

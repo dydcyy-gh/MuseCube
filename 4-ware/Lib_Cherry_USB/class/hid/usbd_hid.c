@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed USB_LOG_WRN warning log from the default case in hid_class_interface_request_handler to reduce console output for unhandled HID requests (line 44).
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_hid.h"
 

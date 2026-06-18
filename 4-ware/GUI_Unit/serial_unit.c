@@ -9,7 +9,6 @@
 #include "usbh_serial_conf.h" 
 
 // 声明外部字体，均支持中文
-LV_FONT_DECLARE(lv_font_8);
 LV_FONT_DECLARE(lv_font_12);
 LV_FONT_DECLARE(lv_font_16);
 LV_FONT_DECLARE(lv_font_24);

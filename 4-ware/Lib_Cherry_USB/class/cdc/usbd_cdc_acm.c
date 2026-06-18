@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed USB_LOG_WRN warning message in default case of cdc_acm_class_interface_request_handler to eliminate log output for unhandled CDC class requests, keeping only return -1.
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_cdc_acm.h"
 

@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Modified `sizeof(xinput_report)` to `sizeof(*xinput_report)` on the memset call for safer pointer-based sizing. Collapsed multi-line if statements to single-line format. Added analog stick scaling from 8-bit (0-255) to 16-bit signed (0-65535) via `(int16_t)report->lx * 256` for lx, ly, rx, ry in `usbd_gamepad_xinput_send_report`. Removed all Switch Pro controller support: deleted `convert_dpad_to_switch_hat()`, `usbd_gamepad_switch_send_report()`, `hid_switch_report_desc` array, `usbd_gamepad_switch_init_intf()`, and the `#include "usbd_gamepad.h"` dependency on HID_SWITCH_REPORT_DESC_SIZE / switch_in_report types. The project version is Xinput-only.
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_hid.h"
 #include "usbd_gamepad.h"

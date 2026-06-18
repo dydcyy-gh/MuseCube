@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added includes for "usb_ringbuffer.h" and "usb_mempool.h" (between usb_memcpy.h and usb_dcache.h), adding ring buffer and memory pool support required by the project's CherryUSB integration.
+ * === End MuseCube modification === */
 #ifndef USBH_CORE_H
 #define USBH_CORE_H
 

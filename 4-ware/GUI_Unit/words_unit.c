@@ -300,7 +300,6 @@ void Create_Words_Unit(void)
     lv_obj_add_event_cb(btn_list, btn_go_list_cb, LV_EVENT_CLICKED, NULL);
 
     ws->lbl_word = lv_label_create(ws->flashcard_cont);
-    // 此处可确保原本字体的正常调用（假设外部已包含头文件支持或者未修改）
     lv_obj_set_style_text_font(ws->lbl_word, &lv_font_36, 0);
     lv_obj_align(ws->lbl_word, LV_ALIGN_CENTER, 0, -40);
 

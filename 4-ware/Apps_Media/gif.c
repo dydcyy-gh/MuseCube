@@ -49,7 +49,7 @@ static void flush_line_buffer(void) {
     if (buf_filled_lines == 0) return;
     LCD_Address_Set(0, buf_start_y, LCD_WIDTH - 1, buf_start_y + buf_filled_lines - 1);
     LCD_Write_DMA(line_buf, LCD_WIDTH * buf_filled_lines);
-    xEventGroupWaitBits(xLcdEventGroup, LCD_USER_VDEO, pdTRUE, pdFALSE, portMAX_DELAY);
+    xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, portMAX_DELAY);
     
     buf_filled_lines = 0;
     memset(line_buf, 0, LCD_WIDTH * BUF_LINES * sizeof(uint16_t));

@@ -229,37 +229,46 @@ uint8_t mp3_get_info(uint8_t *pname,__mp3ctrl* pctrl)
 	return res;	
 }
 
-//得到当前播放时间
-//fx:文件指针
-//mp3x:mp3播放控制器
-void mp3_get_curtime(FIL*fx,__mp3ctrl *mp3x)
-{
-	uint32_t fpos=0;  	 
-	if(fx->fptr>mp3x->datastart)
-		fpos = (fx->fptr > mp3x->datastart) ? (fx->fptr - mp3x->datastart) : 0;//得到当前文件播放到的地方 
-	mp3x->cursec = fpos * mp3x->totsec / (f_size(fx) - mp3x->datastart);	//当前播放到第多少秒了
-}
-
-//mp3文件快进快退函数
-//pos:需要定位到的文件位置
-//返回值:当前文件位置(即定位后的结果)
-uint32_t mp3_file_seek(uint32_t pos)
-{
-    if(pos > f_size(music_ctrl.file))
-    {
-        pos = f_size(music_ctrl.file);
-    }
-    f_lseek(music_ctrl.file, pos);
-    return f_tell(music_ctrl.file);
-}
-
+// ============ 将这几个变量移动到 mp3_file_seek 之上 ============
 HMP3Decoder mp3decoder;
 MP3FrameInfo mp3frameinfo;
-uint8_t* mp3_buffer = NULL;//输入buffer  
-uint8_t* mp3_readptr = NULL;//MP3解码读指针
-int offset = 0;	//偏移量
-int bytesleft = 0;//buffer还剩余的有效数据
+uint8_t* mp3_buffer = NULL; // 输入buffer  
+uint8_t* mp3_readptr = NULL;// MP3解码读指针
+int offset = 0;	            // 偏移量
+int bytesleft = 0;          // buffer还剩余的有效数据
 uint8_t outofdata = 1;
+
+// 得到当前播放时间
+void mp3_get_curtime(FIL*fx,__mp3ctrl *mp3x)
+{
+    uint32_t fpos = 0;  	 
+    if(fx->fptr > mp3x->datastart) fpos = fx->fptr - mp3x->datastart;
+    
+    uint32_t data_size = f_size(fx) - mp3x->datastart;
+    if(data_size > 0)
+    {
+        // 【关键修复】：将 fpos 强转为 uint64_t，防止乘法导致 uint32_t 溢出
+        mp3x->cursec = (uint32_t)(((uint64_t)fpos * mp3x->totsec) / data_size);
+    }
+}
+
+// mp3文件快进快退函数
+uint32_t mp3_file_seek(uint32_t pos)
+{
+    uint32_t file_size = f_size(music_ctrl.file);
+    if(pos > file_size) pos = file_size;
+    if(pos < mp3ctrl->datastart) pos = mp3ctrl->datastart;
+
+    f_lseek(music_ctrl.file, pos);
+    
+    // 【关键修复】：强行清空 Helix 解码器中遗留的老数据
+    // 强制系统在播放任务中重新读取新数据并寻找同步帧 (SyncWord)
+    bytesleft = 0;
+    if(mp3_buffer) mp3_readptr = mp3_buffer;
+    outofdata = 1;
+    
+    return f_tell(music_ctrl.file);
+}
 
 uint8_t mp3_play_song_prepare(uint8_t* fname)
 { 

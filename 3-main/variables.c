@@ -32,9 +32,10 @@ TaskHandle_t Basic_Task_handler   = NULL;
 TaskHandle_t Lvgl_Task_handler    = NULL;
 TaskHandle_t USB_Task_handler     = NULL;
 TaskHandle_t Music_Task_handler   = NULL;
-TaskHandle_t Video_Task_handler   = NULL;
+TaskHandle_t Media_Task_handler   = NULL;
 TaskHandle_t Game_Task_handler    = NULL;
 TaskHandle_t Font_Task_handler    = NULL;
+TaskHandle_t FileOp_Task_handler  = NULL;
 TaskHandle_t Start_Task_handler   = NULL;
 TaskHandle_t Task_Manager_handler = NULL;
 
@@ -109,8 +110,9 @@ volatile uint8_t LVGL_Task_Status = Task_P_Null;
 volatile uint8_t USB_Task_Status = Task_P_Null;
 volatile uint8_t Music_Task_Status = Task_P_Null;
 volatile uint8_t Game_Task_Status = Task_P_Null;
-volatile uint8_t Video_Task_Status = Task_P_Null;
+volatile uint8_t Media_Task_Status = Task_P_Null;
 volatile uint8_t Font_Task_Status = Task_P_Null;
+volatile uint8_t FileOp_Task_Status = Task_P_Null;
 
 //debug
 volatile uint8_t kv_debug_mode = Debug_Mode_None;
@@ -134,6 +136,14 @@ volatile uint8_t music_bitdepth = 16;
 char *current_path = NULL;
 char *chosen_file_path = NULL;
 volatile uint8_t g_file_chosen = 0;
+
+//file_op async worker
+volatile uint8_t g_file_op_cmd  = 0;    // 0=idle, 1=copy, 2=delete
+volatile uint8_t g_file_op_busy = 0;    // 1=operation in progress
+volatile uint8_t g_file_op_done = 0;    // 1=operation just finished
+volatile uint8_t g_file_op_result = 0;  // 0=success, nonzero=error
+char *g_async_src = NULL;              // source path (allocated by UI, freed by worker)
+char *g_async_dst = NULL;              // dest path (allocated by UI, freed by worker)
 
 //flashdb
 struct fdb_kvdb kvdb = { 0 };
@@ -167,3 +177,5 @@ volatile int16_t g_usb_joy_R_Y = 0;
 volatile int16_t g_usb_mouse_dx = 0;
 volatile int16_t g_usb_mouse_dy = 0;
 volatile uint8_t g_usb_mouse_btn = 0;
+
+volatile uint8_t kv_uac1_enable = 0; // 0=UAC2(默认), 1=UAC1(兼容性模式)

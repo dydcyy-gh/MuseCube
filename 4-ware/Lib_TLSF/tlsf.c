@@ -34,7 +34,7 @@ enum tlsf_public
 /* Private constants: do not modify. */
 enum tlsf_private
 {
-	ALIGN_SIZE_LOG2 = 2, //align(64)
+	ALIGN_SIZE_LOG2 = 4, // 16-byte alignment for DMA burst (SDIO)
 	ALIGN_SIZE = (1 << ALIGN_SIZE_LOG2), //2^2
 
 	FL_INDEX_MAX = 17, //2^17 = 128KB

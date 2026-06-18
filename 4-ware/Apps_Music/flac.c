@@ -84,6 +84,18 @@ uint8_t flac_init(FIL* fx, __flacctrl* fctrl)
     return res;
 }
 
+#define IN_BUF_SIZE 8*1024
+#define OUT_BUF_SIZE 16*1024
+
+uint8_t* flac_in_buffer=0;  
+
+uint32_t in_buf_byte_left;
+uint32_t in_buf_offset = 0;
+uint32_t out_buf_byte_left;
+uint32_t br=0; 
+  
+uint32_t flac_fptr=0; 
+
 //得到当前播放时间
 //fx:文件指针
 void flac_get_curtime(FIL* fx, __flacctrl *flacctrl)
@@ -99,28 +111,24 @@ void flac_get_curtime(FIL* fx, __flacctrl *flacctrl)
 }
 
 //flac文件快进快退函数
-//pos:需要定位到的文件位置
-//返回值:当前文件位置(即定位后的结果)
 uint32_t flac_file_seek(uint32_t pos)
 {
-	if(pos>f_size(music_ctrl.file))
-	{
-		pos=f_size(music_ctrl.file);
-	}
-	f_lseek(music_ctrl.file,pos);
-	return music_ctrl.file->fptr;
+    uint32_t file_size = f_size(music_ctrl.file);
+    if(pos > file_size) pos = file_size;
+    if(pos < flacctrl->datastart) pos = flacctrl->datastart;
+
+    f_lseek(music_ctrl.file, pos);
+
+    // 强制清空 foxen-flac 内部的 bitstream 缓存
+    fx_flac_flush(flacctrl->decoder);
+
+    in_buf_byte_left = 0;
+    in_buf_offset = 0;    // 强制复位缓冲游标
+    // 强制触发 Task 内的文件全量重读机制
+    flac_fptr = 0xFFFFFFFF;
+    
+    return music_ctrl.file->fptr;
 }
-
-#define IN_BUF_SIZE 2*1024
-#define OUT_BUF_SIZE 12*1024
-
-uint8_t* flac_in_buffer=0;  
-
-uint32_t in_buf_byte_left;
-uint32_t out_buf_byte_left;
-uint32_t br=0; 
-  
-uint32_t flac_fptr=0; 
 
 uint8_t flac_play_song_prepare(uint8_t* fname)
 { 
@@ -147,7 +155,6 @@ uint8_t flac_play_song_prepare(uint8_t* fname)
 		
 		I2S2_Init(I2S_Standard_Phillips, I2S_Mode_MasterTx, I2S_CPOL_Low, I2S_DataFormat_32b);
 
-        // [新增] 填充 music_info 结构体，参考 wav.c
         music_info.total_sec = flacctrl->totsec;    // 总秒数
         music_info.bitrate = flacctrl->bitrate;     // 比特率
         music_info.samplerate = flacctrl->samplerate; // 采样率
@@ -168,6 +175,7 @@ uint8_t flac_play_song_prepare(uint8_t* fname)
 			// 读取初始数据
 			f_read(music_ctrl.file, flac_in_buffer, IN_BUF_SIZE, &br);
 			in_buf_byte_left = br;
+            in_buf_offset = 0;  // 复位缓冲游标
 			flac_fptr = music_ctrl.file->fptr;
 			
 			I2S_Play_Start();
@@ -208,6 +216,7 @@ void flac_play_song_task(uint8_t* fname)
 				}
 				f_read(music_ctrl.file, flac_in_buffer, IN_BUF_SIZE, &br);
 				in_buf_byte_left = br;
+                in_buf_offset = 0;  // 复位缓冲游标
 				flac_fptr = music_ctrl.file->fptr;
 			}
 			
@@ -219,26 +228,32 @@ void flac_play_song_task(uint8_t* fname)
 
 			while(out_buf_byte_left)
 			{
-				// 先看看要不要读数据
+				// 当数据余量不到一半时，集中大块填满，减少碎片化耗时
 				if(in_buf_byte_left < IN_BUF_SIZE/2) 
 				{
-					f_read(music_ctrl.file, flac_in_buffer + in_buf_byte_left, IN_BUF_SIZE/2, &br);
+                    // 先把剩下未处理的有效数据挪到缓冲区头部
+					if(in_buf_byte_left > 0 && in_buf_offset > 0) {
+						memmove(flac_in_buffer, flac_in_buffer + in_buf_offset, in_buf_byte_left);
+					}
+					in_buf_offset = 0; // 重置游标
+
+                    // 一次性把缓存给全部塞满，减少SD卡的极低效碎片调用
+					f_read(music_ctrl.file, flac_in_buffer + in_buf_byte_left, IN_BUF_SIZE - in_buf_byte_left, &br);
 					in_buf_byte_left += br;
 				}
 				// 没有数据了
 				if(!in_buf_byte_left) {Music_Status = Song_End; break;}
 				
-				// 解码
+				// 传给解码器的是 flac_in_buffer + in_buf_offset
 				uint32_t in_len = in_buf_byte_left;
 				uint32_t out_len = out_buf_byte_left / 4;
 				int32_t* temp_buf = (int32_t*)out_ptr;
 				
-				fx_flac_state_t state = fx_flac_process(flacctrl->decoder, flac_in_buffer, &in_len, temp_buf, &out_len);
+				fx_flac_state_t state = fx_flac_process(flacctrl->decoder, flac_in_buffer + in_buf_offset, &in_len, temp_buf, &out_len);
 				
 				// 出错
 				if(state == FLAC_ERR) {Music_Status = Song_End; break;}
-				if(state == FLAC_SEARCH_FRAME) {continue;}
-
+                
 				// 读取到了数据
 				if(out_len > 0) 
 				{
@@ -251,12 +266,10 @@ void flac_play_song_task(uint8_t* fname)
 						{
 							int32_t sample = *src;
                             
-                            // 软件音量缩放 (参考wav.c)
                             if(kv_hdp0_or_spk1) {
                                 sample = (int32_t)(((int64_t)sample * kv_spk_value) >> 8);
                             }
                             
-                            // 数据位整理 (32bit ROR 16, 优化性能)
 							int32_t ex_sample = __ROR(sample, 16);
                             
 							*dst-- = ex_sample;
@@ -267,19 +280,15 @@ void flac_play_song_task(uint8_t* fname)
 					}
 					else
 					{
-                        // Stereo 优化处理
 						uint32_t* p = (uint32_t*)temp_buf;
 						for(uint32_t i = 0; i < out_len; i++)
 						{
                             int32_t sample = p[i];
                             
-                            // 软件音量缩放
                             if(kv_hdp0_or_spk1) {
                                 sample = (int32_t)(((int64_t)sample * kv_spk_value) >> 8);
                             }
                             
-                            // 数据位整理 (32bit ROR 16)
-                            // 替代原有的16bit指针交换操作，提高性能
                             p[i] = __ROR(sample, 16);
 						}
 						out_ptr += out_len * 4;
@@ -287,10 +296,10 @@ void flac_play_song_task(uint8_t* fname)
 					out_buf_byte_left -= out_len * 4;
 				}
 				
-				// 移动输入缓冲区
-				if(in_len < in_buf_byte_left)
+				// 更新游标指针和剩余量，绝对不在此处进行 memmove！
+				if(in_len <= in_buf_byte_left)
 				{
-					memmove(flac_in_buffer, flac_in_buffer+in_len, in_buf_byte_left-in_len);
+                    in_buf_offset += in_len;
 					in_buf_byte_left -= in_len;
 				}
 				else in_buf_byte_left = 0;
@@ -298,7 +307,7 @@ void flac_play_song_task(uint8_t* fname)
 
 			flac_get_curtime(music_ctrl.file, flacctrl);
 			flac_fptr = music_ctrl.file->fptr;
-            music_info.current_sec = flacctrl->cursec; // [新增] 更新全局播放时间
+            music_info.current_sec = flacctrl->cursec; 
         }
 		Extract_FFT(target_buf);
     } 

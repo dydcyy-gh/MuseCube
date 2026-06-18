@@ -4,6 +4,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed custom usbh_serial_ringbuf_t struct definition; replaced
+ * usbh_serial_ringbuf_t rx_rb field with existing usb_ringbuffer_t type
+ * and changed rx_rb_pool from a fixed-size array to a uint8_t pointer,
+ * allowing the ring buffer to use dynamically allocated memory managed
+ * by the project's TLSF allocator rather than a compile-time fixed buffer.
+ * === End MuseCube modification === */
 #ifndef USBH_SERIAL_H
 #define USBH_SERIAL_H
 

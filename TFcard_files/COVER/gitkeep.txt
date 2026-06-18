@@ -1,0 +1,2 @@
+此文件夹放置音乐封面,bmp格式,120*120大小.
+ffmpeg示例: ffmpeg -i 输入图片 -vf "scale=120:120:force_original_aspect_ratio=increase,crop=120:120" -pix_fmt rgb565le 输出图片.bmp

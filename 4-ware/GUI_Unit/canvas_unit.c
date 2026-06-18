@@ -368,7 +368,7 @@ static void float_btn_event_cb(lv_event_t * e)
             if(float_panel) build_float_panel_content(float_panel);
             break;
         case 5: if(current_zoom < MAX_ZOOM) {current_zoom++;apply_zoom();} break;// 放大
-        case 6: Save_Canvas_To_BMP("0:/PICTURE/test.bmp"); break;// 保存SD
+        case 6: Save_Canvas_To_BMP("0:/MEDIA/test.bmp"); break;// 保存SD
         
         case 7: // 画笔/橡皮切换
         {
@@ -382,7 +382,7 @@ static void float_btn_event_cb(lv_event_t * e)
             break;
         }
         
-        case 8: Load_Canvas_From_BMP("0:/PICTURE/test.bmp"); break;// 加载SD
+        case 8: Load_Canvas_From_BMP("0:/MEDIA/test.bmp"); break;// 加载SD
     }
 }
 

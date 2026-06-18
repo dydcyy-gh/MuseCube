@@ -12,6 +12,10 @@
 #include "malloc.h"
 #include "kvdb_ctrl.h"
 
+// [新增] 引入 FreeRTOS，用于在进度条跳转时提供延时保护
+#include "FreeRTOS.h"
+#include "task.h"
+
 // Extern image resources
 extern const lv_img_dsc_t music_before;
 extern const lv_img_dsc_t music_cycle;
@@ -37,8 +41,10 @@ typedef struct {
 	lv_obj_t *img_album;
 	lv_obj_t *label_song_name;
 	lv_obj_t *label_format_info;
-	lv_obj_t *bar_progress;
-	lv_obj_t *label_curr_time;
+	
+	lv_obj_t *slider_progress; 
+	
+    lv_obj_t *label_curr_time;
 	lv_obj_t *label_total_time;
 
 	lv_obj_t *btn_mode;
@@ -58,11 +64,19 @@ typedef struct {
 	// Update_Music_Unit 内部持久状态
 	uint32_t last_current_sec;
 	uint32_t last_total_sec;
+    
+    // [性能优化] 新增：用于记录图标的上一状态，防止50Hz疯狂重绘
+    uint8_t last_play_state;
+    uint8_t last_mode_state;
+
 	char buf_total[16];
 	char buf_curr[16];
 	uint8_t limit;
 	uint16_t current_w_100[SPECTRUM_NUM];
 	lv_coord_t last_drawn_w[SPECTRUM_NUM];
+    
+    // 标记当前是否正在拖动进度条
+    bool is_dragging; 
 } music_state_t;
 
 static music_state_t *ms = NULL;
@@ -80,6 +94,45 @@ static void obj_style_init_clean(lv_obj_t *obj) {
 	lv_obj_set_style_radius(obj, 0, 0);
 	lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
 	lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+// 进度条拖动事件回调 (music_unit.c)
+static void slider_event_cb(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t * slider = lv_event_get_target(e);
+
+    // 正在按下或拖拽中：锁定 UI 刷新
+    if(code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING) {
+        ms->is_dragging = true; 
+    }
+
+    // 拖拽时：实时显示目标时间文字
+    if(code == LV_EVENT_VALUE_CHANGED || code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING) {
+        uint32_t target_sec = lv_slider_get_value(slider);
+        snprintf(ms->buf_curr, sizeof(ms->buf_curr), "%02d:%02d", target_sec/60, target_sec%60);
+        lv_label_set_text(ms->label_curr_time, ms->buf_curr);
+    }
+
+    // 松手释放：执行跳转
+    if(code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        uint32_t target_sec = lv_slider_get_value(slider);
+
+        // 【核心修复：解决 FatFs 并发导致的死循环卡死】
+        uint8_t old_suspend = Music_Suspend_Flag;
+        Music_Suspend_Flag = 1;
+        
+        // 延时 40ms，确保后台解码任务已完成并退出当前的 f_read 动作
+        vTaskDelay(pdMS_TO_TICKS(40));
+
+        // 此时底层的 file 对象没人抢，安全执行跳转
+        audio_seek(target_sec);
+        
+        // 恢复播放状态
+        Music_Suspend_Flag = old_suspend;
+        
+        ms->last_current_sec = target_sec;
+        ms->is_dragging = false; 
+    }
 }
 
 // 视图切换回调
@@ -148,16 +201,14 @@ static lv_obj_t* create_icon_btn(lv_obj_t *parent, const void *src, int x, int y
 
 // 初始化新的歌词与图片
 static void load_music_resources(const char *music_name) {
-	// 1. 处理专辑图片
 	char img_path[64];
-	snprintf(img_path, sizeof(img_path), "0:/PICTURE/%s.bmp", music_name);
+	snprintf(img_path, sizeof(img_path), "0:/COVER/%s.bmp", music_name);
 	if (file_exists(img_path)) {
 		lv_img_set_src(ms->img_album, img_path);
 	} else {
-		lv_img_set_src(ms->img_album, "0:/PICTURE/default.bmp");
+		lv_img_set_src(ms->img_album, "0:/COVER/default.bmp");
 	}
 
-	// 2. 处理歌词文件
 	lrc_decoder_close(&ms->lrc_decoder);
 	char lrc_path[64];
 	snprintf(lrc_path, sizeof(lrc_path), "0:/LYRICS/%s.lrc", music_name);
@@ -182,8 +233,12 @@ void Create_Music_Unit(void)
 	ms->last_lrc_index = -2;
 	ms->last_current_sec = 0xFFFFFFFF;
 	ms->last_total_sec = 0xFFFFFFFF;
+    ms->is_dragging = false; 
+    
+    // [性能优化] 初始化状态，赋予一个不可能的值，确保第一次进入Update必定刷新
+    ms->last_play_state = 0xFF; 
+    ms->last_mode_state = 0xFF;
 
-	// 0. 创建纯白色背景
 	ms->wallpaper_bg = lv_obj_create(lv_scr_act());
 	lv_obj_set_size(ms->wallpaper_bg, LV_HOR_RES, LV_VER_RES);
 	lv_obj_set_pos(ms->wallpaper_bg, 0, 0);
@@ -193,18 +248,15 @@ void Create_Music_Unit(void)
 	lv_obj_set_style_pad_all(ms->wallpaper_bg, 0, 0);
 	lv_obj_set_style_radius(ms->wallpaper_bg, 0, 0);
 
-	// 1. Main Container
 	ms->music_unit = lv_obj_create(lv_scr_act());
 	lv_obj_set_size(ms->music_unit, 240, 210);
 	lv_obj_set_pos(ms->music_unit, 0, 0);
 	obj_style_init_clean(ms->music_unit);
 
-	// 2. Album Art Container
 	ms->obj_album = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(ms->obj_album, 120, 120);
 	lv_obj_set_pos(ms->obj_album, 10, 10);
 	obj_style_init_clean(ms->obj_album);
-	lv_obj_set_style_radius(ms->obj_album, 12, 0);
 	lv_obj_set_style_border_width(ms->obj_album, 1, 0);
 	lv_obj_set_style_border_color(ms->obj_album, lv_color_hex(0xCCCCCC), 0);
 	lv_obj_set_style_clip_corner(ms->obj_album, true, 0);
@@ -212,7 +264,6 @@ void Create_Music_Unit(void)
 	ms->img_album = lv_img_create(ms->obj_album);
 	lv_obj_center(ms->img_album);
 
-	// 3. Spectrum Area
 	ms->obj_spectrum = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(ms->obj_spectrum, 60, 120);
 	lv_obj_set_pos(ms->obj_spectrum, 138, 10);
@@ -229,7 +280,6 @@ void Create_Music_Unit(void)
 		lv_obj_set_style_bg_opa(ms->spectrum_bars[i], LV_OPA_COVER, 0);
 	}
 
-	// 3.5 歌词显示容器
 	ms->obj_lyrics = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(ms->obj_lyrics, 188, 120);
 	lv_obj_set_pos(ms->obj_lyrics, 10, 10);
@@ -244,7 +294,6 @@ void Create_Music_Unit(void)
 	lv_obj_add_flag(ms->obj_lyrics, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_add_event_cb(ms->obj_lyrics, toggle_view_event_cb, LV_EVENT_CLICKED, NULL);
 
-	// 创建 5 行歌词 Label
 	for(int i = 0; i < 5; i++) {
 		ms->lrc_labels[i] = lv_label_create(ms->obj_lyrics);
 		lv_obj_set_width(ms->lrc_labels[i], LV_PCT(100));
@@ -266,10 +315,10 @@ void Create_Music_Unit(void)
 	lv_obj_align_to(ms->lrc_labels[3], ms->lrc_labels[2], LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
 	lv_obj_align_to(ms->lrc_labels[4], ms->lrc_labels[3], LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
 
-	// 初次加载资源
-	load_music_resources(music_info.music_name);
+    if(music_info.music_name != NULL) {
+	    load_music_resources(music_info.music_name);
+    }
 
-	// 4. Icons (Right Side)
 	lv_obj_t* btn_exit = create_icon_btn(ms->music_unit, &music_exit, 206, 10, 1);
 	lv_obj_set_style_img_recolor(btn_exit, lv_palette_lighten(LV_PALETTE_ORANGE, 1), 0);
 
@@ -283,7 +332,6 @@ void Create_Music_Unit(void)
 	ms->btn_like = create_icon_btn(ms->music_unit, &music_like, 206, 106, 4);
 	if(ms->like_state) lv_obj_set_style_img_recolor(ms->btn_like, lv_palette_lighten(LV_PALETTE_RED, 1), 0);
 
-	// 5. Song Title
 	lv_obj_t *cont_song = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(cont_song, 120, 24);
 	lv_obj_set_pos(cont_song, 10, 138);
@@ -294,10 +342,10 @@ void Create_Music_Unit(void)
 	lv_label_set_long_mode(ms->label_song_name, LV_LABEL_LONG_SCROLL_CIRCULAR);
 	lv_obj_set_width(ms->label_song_name, 120);
 	lv_obj_align(ms->label_song_name, LV_ALIGN_LEFT_MID, 0, 0);
-	lv_label_set_text(ms->label_song_name, music_info.music_name);
-	lv_obj_set_style_anim_speed(ms->label_song_name, 12, 0);
+	
+    if(music_info.music_name != NULL) lv_label_set_text(ms->label_song_name, music_info.music_name);
+    lv_obj_set_style_anim_speed(ms->label_song_name, 12, 0);
 
-	// 7. Controls Container
 	lv_obj_t *cont_ctrl = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(cont_ctrl, 92, 24);
 	lv_obj_set_pos(cont_ctrl, 138, 138);
@@ -310,7 +358,6 @@ void Create_Music_Unit(void)
 
 	create_icon_btn(cont_ctrl, &music_next, 68, 0, 7);
 
-	// 8. Format Info
 	lv_obj_t *cont_fmt = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(cont_fmt, 220, 15);
 	lv_obj_set_pos(cont_fmt, 10, 162);
@@ -322,20 +369,23 @@ void Create_Music_Unit(void)
 	lv_label_set_long_mode(ms->label_format_info, LV_LABEL_LONG_DOT);
 	lv_obj_align(ms->label_format_info, LV_ALIGN_LEFT_MID, 0, 0);
 
-	// 9. Progress Bar Area
 	lv_obj_t *cont_prog = lv_obj_create(ms->music_unit);
 	lv_obj_set_size(cont_prog, 220, 20);
 	lv_obj_set_pos(cont_prog, 10, 180);
 	obj_style_init_clean(cont_prog);
 
-	ms->bar_progress = lv_bar_create(cont_prog);
-	lv_obj_set_size(ms->bar_progress, 140, 6);
-	lv_obj_align(ms->bar_progress, LV_ALIGN_CENTER, 0, 0);
-	lv_obj_set_style_radius(ms->bar_progress, 2, 0);
-	lv_obj_set_style_border_width(ms->bar_progress, 0, 0);
-	lv_obj_set_style_bg_color(ms->bar_progress, lv_palette_lighten(LV_PALETTE_GREY, 2), LV_PART_MAIN);
-	lv_obj_set_style_bg_color(ms->bar_progress, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_INDICATOR);
-	lv_obj_set_style_anim_time(ms->bar_progress, 100, 0);
+	ms->slider_progress = lv_slider_create(cont_prog);
+	lv_obj_set_size(ms->slider_progress, 140, 6);
+	lv_obj_align(ms->slider_progress, LV_ALIGN_CENTER, 0, 0);
+    
+	lv_obj_set_style_bg_color(ms->slider_progress, lv_palette_lighten(LV_PALETTE_GREY, 2), LV_PART_MAIN);
+	lv_obj_set_style_radius(ms->slider_progress, 3, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(ms->slider_progress, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_INDICATOR);
+	lv_obj_set_style_radius(ms->slider_progress, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(ms->slider_progress, lv_palette_main(LV_PALETTE_GREY), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(ms->slider_progress, 2, LV_PART_KNOB);
+    
+    lv_obj_add_event_cb(ms->slider_progress, slider_event_cb, LV_EVENT_ALL, NULL);
 
 	ms->label_curr_time = lv_label_create(cont_prog);
 	lv_obj_set_style_text_font(ms->label_curr_time, &lv_font_12, 0);
@@ -354,8 +404,7 @@ void Update_Music_Unit(void)
 {
 	if (ms == NULL) return;
 
-	// Check if music name has changed
-	if (strncmp(ms->last_music_name, music_info.music_name, sizeof(ms->last_music_name)) != 0) {
+	if (music_info.music_name != NULL && strncmp(ms->last_music_name, music_info.music_name, sizeof(ms->last_music_name)) != 0) {
 		strncpy(ms->last_music_name, music_info.music_name, sizeof(ms->last_music_name) - 1);
 		ms->last_music_name[sizeof(ms->last_music_name) - 1] = '\0';
 
@@ -369,6 +418,8 @@ void Update_Music_Unit(void)
 			case 3: fmt_str = "flac"; break;
 			case 4: fmt_str = "aac"; break;
 			case 5: fmt_str = "ape"; break;
+			case 6: fmt_str = "aiff"; break;
+			case 7: fmt_str = "ogg"; break;
 		}
 
 		char buf[64];
@@ -380,7 +431,6 @@ void Update_Music_Unit(void)
 		lv_label_set_text(ms->label_format_info, buf);
 	}
 
-	// 歌词更新逻辑
 	if (ms->lrc_decoder.line_count > 0 && ms->show_lyrics) {
 		uint32_t curr_ms = music_info.current_sec * 1000;
 		int16_t current_idx = lrc_decoder_get_line_index(&ms->lrc_decoder, curr_ms);
@@ -390,12 +440,9 @@ void Update_Music_Unit(void)
 
 			for (int i = 0; i < 5; i++) {
 				int16_t target_idx = current_idx + (i - 2);
-
 				if (target_idx >= 0 && target_idx < ms->lrc_decoder.line_count) {
 					char *text_ptr = ms->lrc_decoder.lines[target_idx].text;
-					while(*text_ptr == ' ' || *text_ptr == '\t') {
-						text_ptr++;
-					}
+					while(*text_ptr == ' ' || *text_ptr == '\t') text_ptr++;
 					lv_label_set_text(ms->lrc_labels[i], text_ptr);
 				} else {
 					lv_label_set_text(ms->lrc_labels[i], "");
@@ -410,60 +457,68 @@ void Update_Music_Unit(void)
 		}
 	}
 
-	// Update Mode Icon
-	if(ms->btn_mode) {
+    // [性能优化] 只有当模式切换时，才去更新UI，避免50Hz重绘导致卡死
+	if(ms->btn_mode && ms->last_mode_state != kv_music_switch_method) {
+        ms->last_mode_state = kv_music_switch_method;
 		if (kv_music_switch_method == Play_In_Order) lv_img_set_src(ms->btn_mode, &music_order);
 		else if (kv_music_switch_method == Play_Randomly) lv_img_set_src(ms->btn_mode, &music_random);
 		else if (kv_music_switch_method == Play_Repeatly) lv_img_set_src(ms->btn_mode, &music_cycle);
 	}
 
-	// Update Play/Pause Icon
-	if(ms->btn_play) {
+    // [性能优化] 只有当播放状态切换时，才去更新UI，避免50Hz重绘导致卡死
+	if(ms->btn_play && ms->last_play_state != Music_Suspend_Flag) {
+        ms->last_play_state = Music_Suspend_Flag;
 		if (Music_Suspend_Flag == 1) lv_img_set_src(ms->btn_play, &music_suspend);
 		else lv_img_set_src(ms->btn_play, &music_playing);
 	}
 
-	// Update Progress
 	if (music_info.total_sec != ms->last_total_sec) {
 		ms->last_total_sec = music_info.total_sec;
-		lv_bar_set_range(ms->bar_progress, 0, music_info.total_sec);
+        if(music_info.total_sec > 0) {
+		    lv_slider_set_range(ms->slider_progress, 0, music_info.total_sec);
+        } else {
+            lv_slider_set_range(ms->slider_progress, 0, 1);
+        }
 		snprintf(ms->buf_total, sizeof(ms->buf_total), "%02d:%02d", music_info.total_sec/60, music_info.total_sec%60);
-		lv_label_set_text_static(ms->label_total_time, ms->buf_total);
+        // [性能优化] 避免使用 static，否则如果栈/堆内数据变化而 LVGL 未察觉会导致显示乱码或越界
+		lv_label_set_text(ms->label_total_time, ms->buf_total);
 	}
 
-	if (music_info.current_sec != ms->last_current_sec) {
+	if (!ms->is_dragging && music_info.current_sec != ms->last_current_sec) {
 		ms->last_current_sec = music_info.current_sec;
-		lv_bar_set_value(ms->bar_progress, music_info.current_sec, LV_ANIM_OFF);
+		lv_slider_set_value(ms->slider_progress, music_info.current_sec, LV_ANIM_OFF);
 		snprintf(ms->buf_curr, sizeof(ms->buf_curr), "%02d:%02d", music_info.current_sec/60, music_info.current_sec%60);
-		lv_label_set_text_static(ms->label_curr_time, ms->buf_curr);
+        // [性能优化] 同理，改为 lv_label_set_text
+		lv_label_set_text(ms->label_curr_time, ms->buf_curr);
 	}
 
-	// Update DSP Horizontal Bars
-	ms->limit = !ms->limit;
-	if(ms->limit) return;
+    // 限制 DSP UI 更新频率 (约 16Hz)，这是正确的做法，保持不变
+    ms->limit++;
+    if(ms->limit < 3) return;
+    ms->limit = 0;
 
-	Spectrum_Loop();
+    Spectrum_Loop();
 
-	if (!ms->show_lyrics && ms->spectrum_bars[0] != NULL) {
-		for(int i = 0; i < SPECTRUM_NUM; i++) {
-			uint16_t target_w_100 = g_spectrum_data[i] * 60;
+    if (!ms->show_lyrics && ms->spectrum_bars[0] != NULL) {
+        for(int i = 0; i < SPECTRUM_NUM; i++) {
+            uint16_t target_w_100 = g_spectrum_data[i] * 60;
 
-			if (ms->current_w_100[i] < target_w_100) {
-				ms->current_w_100[i] += (target_w_100 - ms->current_w_100[i]) >> 1;
-			} else if (ms->current_w_100[i] > target_w_100) {
-				ms->current_w_100[i] -= (ms->current_w_100[i] - target_w_100) >> 1;
-			}
+            if (ms->current_w_100[i] < target_w_100) {
+                ms->current_w_100[i] += (target_w_100 - ms->current_w_100[i]) >> 1;
+            } else if (ms->current_w_100[i] > target_w_100) {
+                ms->current_w_100[i] -= (ms->current_w_100[i] - target_w_100) >> 1;
+            }
 
-			lv_coord_t w = ms->current_w_100[i] / 100;
-			if(w < 0) w = 0;
-			if(w > 60) w = 60;
+            lv_coord_t w = ms->current_w_100[i] / 100;
+            if(w < 0) w = 0;
+            if(w > 60) w = 60;
 
-			if(w != ms->last_drawn_w[i]) {
-				lv_obj_set_width(ms->spectrum_bars[i], w);
-				ms->last_drawn_w[i] = w;
-			}
-		}
-	}
+            if(w != ms->last_drawn_w[i]) {
+                lv_obj_set_width(ms->spectrum_bars[i], w);
+                ms->last_drawn_w[i] = w;
+            }
+        }
+    }
 }
 
 void Remove_Music_Unit(void)

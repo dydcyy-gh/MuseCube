@@ -124,6 +124,13 @@ void Basic_Task( void * pvParameters )
 		
 		ES9018_Update_Register();
 		
+		static uint8_t last_M = 0;
+		if(!g_key_WKP_RT && last_M)
+		{
+			//进入休眠模式
+		}
+		last_M = g_key_WKP_RT;
+	
         if(++count100ms > 4)
         {
             count100ms = 0;

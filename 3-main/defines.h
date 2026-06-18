@@ -11,9 +11,9 @@
 #define LVGL_PRIO         2
 #define LVGL_STACK_SIZE   512
 
-//Video task
-#define VIDEO_PRIO         2
-#define VIDEO_STACK_SIZE   512
+//Media task
+#define MEDIA_PRIO         2
+#define MEDIA_STACK_SIZE   512
 
 //Game task
 #define GAME_PRIO         2
@@ -26,9 +26,9 @@
 //usb ep0 thread 5
 //usb host psc thread 5
 
-//Music task
+//Music task 
 #define MUSIC_PRIO         6
-#define MUSIC_STACK_SIZE   512
+#define MUSIC_STACK_SIZE   1024
 
 //TASK_MANAGER
 #define TASK_MANAGER_PRIO         7
@@ -42,14 +42,19 @@
 #define FONT_PRIO         1
 #define FONT_STACK_SIZE   512
 
+//FileOp task (background file copy/delete worker)
+#define FILEOP_PRIO         1
+#define FILEOP_STACK_SIZE   512
+
 //...define for Rtos Task Settings...//
 #define Task_N_Basic     0
 #define Task_N_LVGL      1
 #define Task_N_USB       2
 #define Task_N_Music     3
-#define Task_N_Video     4
+#define Task_N_Media     4
 #define Task_N_Game      5
 #define Task_N_Font      6
+#define Task_N_FileOp    7
 
 
 //...define for task manager : task status...// (T-temporary  P-presistent)
@@ -130,7 +135,7 @@
 //g_lcd_user
 #define LCD_USER_LVGL (1 << 0)
 #define LCD_USER_DISP (1 << 1)
-#define LCD_USER_VDEO (1 << 2)
+#define LCD_USER_MDIA (1 << 2)
 #define LCD_USER_GAME (1 << 3)
 
 //global error bumber

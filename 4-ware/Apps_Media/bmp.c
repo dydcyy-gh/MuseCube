@@ -147,7 +147,7 @@ uint8_t Decode_BMP_Picture(const char *path)
             if (buf_filled >= BUF_LINES || y == crop_bottom) {
                 LCD_Address_Set(0, buf_start_y, LCD_WIDTH - 1, buf_start_y + buf_filled - 1);
                 LCD_Write_DMA(line_buf, LCD_WIDTH * buf_filled);
-                xEventGroupWaitBits(xLcdEventGroup, LCD_USER_VDEO, pdTRUE, pdFALSE, portMAX_DELAY);
+                xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, portMAX_DELAY);
                 
                 buf_filled = 0;
                 buf_start_y = y + 1;

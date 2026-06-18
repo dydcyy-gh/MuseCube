@@ -16,7 +16,8 @@ void Music_Task( void * pvParameters )
 	{
 		if(Music_Status == Music_None)
 		{
-			if(Page_Get_Current() == PAGE_MUSIC) 
+			// 【修改处】：双重判断，确保当前和目标页面都是音乐页时才触发自动播放
+			if(Page_Get_Current() == PAGE_MUSIC && Page_Get_Next() == PAGE_MUSIC)
 			{
 				Music_Status = Music_Init;
 			}
@@ -49,11 +50,11 @@ void Music_Task( void * pvParameters )
 			}
 			
 			//从桌面进入到不是音乐的页面
-			if(current_page != PAGE_MUSIC && last_page == PAGE_DESKTOP) 
+			if(current_page != PAGE_MUSIC && last_page == PAGE_DESKTOP)
 			{
 				Music_Status = Music_Exit;
 			}
-            
+
 			//从音乐进入文件页面
 			if(current_page == PAGE_FILE && last_page == PAGE_MUSIC) 
 			{

@@ -239,41 +239,51 @@ uint32_t wav_buffill(uint8_t* buf, uint16_t size, uint8_t bits)
 void wav_get_curtime(FIL* fx, __wavctrl* wavx)
 {
     long long fpos;
-    wavx->totsec = wavx->datasize / (wavx->bitrate / 8); // 总时长（秒）
-    fpos = fx->fptr - wavx->datastart;                   // 当前文件播放位置
-    wavx->cursec = fpos * wavx->totsec / wavx->datasize; // 当前播放时间（秒）
+    uint32_t byte_rate = wavx->bitrate / 8; // 每秒字节数(ByteRate)
+    
+    // 防呆保护：防止 bitrate 为 0 导致硬件除零异常
+    if(byte_rate == 0) return; 
+
+    // 计算当前数据偏移量（防止在文件头准备阶段产生负数）
+    if(fx->fptr < wavx->datastart) fpos = 0;
+    else fpos = fx->fptr - wavx->datastart;                   
+    
+    // 优化：直接使用 (当前字节偏移量 / 每秒字节数) 即可得到精确秒数
+    // 避免了原来先除后乘带来的精度丢失和冗余计算
+    wavx->cursec = (uint32_t)(fpos / byte_rate); 
+    wavx->totsec = wavx->datasize / byte_rate; 
 }
 
+
 // WAV文件快进快退函数
-// pos: 需要定位到的文件位置
+// pos: 需要定位到的文件绝对位置
 // 返回值: 实际定位到的文件位置
 uint32_t wav_file_seek(uint32_t pos)
 {
-    uint8_t temp = 0;
     uint32_t file_size = f_size(music_ctrl.file);
     
+    // 最大有效范围应限制在 数据的起始点 + 数据总长度 之内
+    uint32_t max_pos = wavctrl.datastart + wavctrl.datasize;
+    if(max_pos > file_size) max_pos = file_size;
+    
     // 边界保护
-    if(pos > file_size) pos = file_size;
+    if(pos > max_pos) pos = max_pos;
     if(pos < wavctrl.datastart) pos = wavctrl.datastart;
 
-    // 根据位深设置对齐步长
-    if(wavctrl.bps == 16)       temp = 8;   // 16bit 2ch×2bytes=4bytes/采样 → 对齐步长8字节（2采样）
-    else if(wavctrl.bps == 24)  temp = 12;  // 24bit 2ch×3bytes=6bytes/采样 → 对齐步长12字节（2采样）
-    else if(wavctrl.bps == 32)  temp = 8;   // 32bit 2ch×4bytes=8bytes/采样 → 对齐步长8字节（1采样）
-
-    // 对齐修正（确保定位到完整采样点）
-    if(temp > 0) 
+    // 使用官方标准的 BlockAlign 进行采样帧对齐
+    // 按块(Frame)对齐能 100% 保证左右声道数据不会因为 Seek 而导致左右耳互换！
+    if(wavctrl.blockalign > 0) 
     {
         uint32_t data_offset = pos - wavctrl.datastart;
-        if(data_offset % temp) 
+        if(data_offset % wavctrl.blockalign) 
         {
-            pos += temp - (data_offset % temp);  // 向上对齐到最近的有效位置
-            if(pos > file_size) pos = file_size; // 二次边界校验
+            // 向下对齐到最近的完整帧，简单安全，避免向上对齐二次越界
+            pos -= (data_offset % wavctrl.blockalign);  
         }
     }
 
     f_lseek(music_ctrl.file, pos);
-    return f_tell(music_ctrl.file);  // 使用标准API获取当前偏移
+    return f_tell(music_ctrl.file); 
 }
 
 // 播放某个 WAV 文件

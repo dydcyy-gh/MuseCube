@@ -294,6 +294,11 @@ FX_EXPORT int64_t fx_flac_get_streaminfo(const fx_flac_t *inst,
 FX_EXPORT fx_flac_state_t fx_flac_process(fx_flac_t *inst, const uint8_t *in,
                                           uint32_t *in_len, int32_t *out,
                                           uint32_t *out_len);
+/**
+ * 强制清空解码器内部的比特流缓存，并让其进入寻找下一帧的状态。
+ * 必须在 f_lseek 跳转后调用！
+ */
+FX_EXPORT void fx_flac_flush(fx_flac_t *inst);
 
 #ifdef __cplusplus
 }

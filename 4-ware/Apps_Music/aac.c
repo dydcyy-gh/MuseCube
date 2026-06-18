@@ -69,27 +69,43 @@ void aac_fill_buffer(uint16_t* buf,uint16_t size,uint8_t nch)
     }
 } 
 
-//得到当前播放时间
-//fx:文件指针
-//aacx:aac播放控制器
+// ============ 将这几个变量移动到 aac_file_seek 之上 ============
+HAACDecoder aacdecoder;
+AACFrameInfo aacframeinfo;
+uint8_t* aac_buffer = NULL; // 输入buffer  
+uint8_t* aac_readptr = NULL;// AAC解码读指针
+int aac_offset = 0;	        // 偏移量
+int aac_bytesleft = 0;      // buffer还剩余的有效数据
+uint8_t aac_outofdata = 1;
+
+// 得到当前播放时间
 void aac_get_curtime(FIL*fx,__aacctrl *aacx)
 {
-	uint32_t fpos=0;  	 
-	if(fx->fptr>aacx->datastart)
-		fpos = (fx->fptr > aacx->datastart) ? (fx->fptr - aacx->datastart) : 0;	//得到当前文件播放到的地方 
-	aacx->cursec = fpos * aacx->totsec / (f_size(fx) - aacx->datastart);	//当前播放到第多少秒了
+    uint32_t fpos = 0;  	 
+    if(fx->fptr > aacx->datastart) fpos = fx->fptr - aacx->datastart;
+    
+    uint32_t data_size = f_size(fx) - aacx->datastart;
+    if(data_size > 0)
+    {
+        // 【关键修复】：防止大文件进度溢出
+        aacx->cursec = (uint32_t)(((uint64_t)fpos * aacx->totsec) / data_size);
+    }
 }
 
-//aac文件快进快退函数
-//pos:需要定位到的文件位置
-//返回值:当前文件位置(即定位后的结果)
+// aac文件快进快退函数
 uint32_t aac_file_seek(uint32_t pos)
 {
-    if(pos > f_size(music_ctrl.file))
-    {
-        pos = f_size(music_ctrl.file);
-    }
+    uint32_t file_size = f_size(music_ctrl.file);
+    if(pos > file_size) pos = file_size;
+    if(pos < aacctrl->datastart) pos = aacctrl->datastart;
+
     f_lseek(music_ctrl.file, pos);
+    
+    // 【关键修复】：清空 AAC 解码器遗留的旧帧
+    aac_bytesleft = 0;
+    if(aac_buffer) aac_readptr = aac_buffer;
+    aac_outofdata = 1;
+
     return f_tell(music_ctrl.file);
 }
 
@@ -158,6 +174,7 @@ uint8_t aac_get_info(uint8_t *pname, __aacctrl* pctrl)
     if (!res) {
         unsigned char *p_work;
         int valid_bytes;
+        int pre_valid_bytes; // [新增] 用于记录解码前还剩多少字节
 
         if (is_adif) {
             p_work = buf + adif_header_size;
@@ -167,6 +184,8 @@ uint8_t aac_get_info(uint8_t *pname, __aacctrl* pctrl)
             valid_bytes = br - offset;
             pctrl->datastart = offset;
         }
+
+        pre_valid_bytes = valid_bytes; // [新增]
 
         if (AACDecode(decoder, &p_work, &valid_bytes, (short*)music_ctrl.tbuf) != 0) {
             res = 6;
@@ -182,8 +201,21 @@ uint8_t aac_get_info(uint8_t *pname, __aacctrl* pctrl)
             pctrl->bit_depth = frame_info.bitsPerSample;
             pctrl->outputSamps = frame_info.outputSamps;
 
+            // [新增] 当libhelix无法解析ADTS码率(等于0)时，通过消耗的字节数计算
             if (!is_adif) {
-                pctrl->bitrate = frame_info.bitRate;
+                if (frame_info.bitRate > 0) {
+                    pctrl->bitrate = frame_info.bitRate;
+                } else {
+                    int consumed_bytes = pre_valid_bytes - valid_bytes; // 刚才解码吃掉了多少字节
+                    uint32_t samps_per_frame = 1024; // AAC默认单通道单帧采样点
+                    if (pctrl->nChans > 0) {
+                        samps_per_frame = pctrl->outputSamps / pctrl->nChans;
+                    }
+                    if (consumed_bytes > 0 && pctrl->Samplerate_Out > 0 && samps_per_frame > 0) {
+                        // 码率(bps) = 帧字节 * 8 * 采样率 / 单帧采样数
+                        pctrl->bitrate = (uint32_t)((uint64_t)consumed_bytes * 8 * pctrl->Samplerate_Out / samps_per_frame);
+                    }
+                }
             }
 
             if (pctrl->bitrate > 0) {
@@ -204,14 +236,6 @@ uint8_t aac_get_info(uint8_t *pname, __aacctrl* pctrl)
     config_err = res;
     return res;
 }
-
-HAACDecoder aacdecoder;
-AACFrameInfo aacframeinfo;
-uint8_t* aac_buffer = NULL;//输入buffer  
-uint8_t* aac_readptr = NULL;//AAC解码读指针
-int aac_offset = 0;	//偏移量
-int aac_bytesleft = 0;//buffer还剩余的有效数据
-uint8_t aac_outofdata = 1;
 
 uint8_t aac_play_song_prepare(uint8_t* fname)
 { 
@@ -331,7 +355,10 @@ void aac_play_song_task(uint8_t* fname)
 				else	        //找到同步字符了
 				{
 					aac_readptr += aac_offset;		//AAC读指针偏移到同步字符处.
-					aac_bytesleft -= aac_offset;		//buffer里面的有效数据个数,必须减去偏��量
+					aac_bytesleft -= aac_offset;		//buffer里面的有效数据个数,必须减去偏移量
+					
+                    int pre_bytesleft = aac_bytesleft; // [新增] 记录解码前字节数
+
 					err = AACDecode(aacdecoder,&aac_readptr,&aac_bytesleft,(short*)music_ctrl.tbuf);//解码一帧AAC数据
 					if(err!=0)
 					{
@@ -340,10 +367,31 @@ void aac_play_song_task(uint8_t* fname)
 					else
 					{
 						AACGetLastFrameInfo(aacdecoder,&aacframeinfo);	//得到刚刚解码的AAC帧信息
-						if(aacctrl->bitrate!=aacframeinfo.bitRate)		//更新码率
-						{
-							aacctrl->bitrate = aacframeinfo.bitRate; 
-						}
+						
+                        // [新增] 动态码率更新，防止被0覆盖
+                        if(aacframeinfo.bitRate > 0)
+                        {
+                            if(aacctrl->bitrate != aacframeinfo.bitRate) 
+                            {
+                                aacctrl->bitrate = aacframeinfo.bitRate; 
+                            }
+                        }
+                        else
+                        {
+                            // 如果得不到合法码率，同样通过帧长计算更新实时码率
+                            int consumed_bytes = pre_bytesleft - aac_bytesleft;
+                            uint32_t samps_per_frame = 1024;
+                            if (aacframeinfo.nChans > 0) {
+                                samps_per_frame = aacframeinfo.outputSamps / aacframeinfo.nChans;
+                            }
+                            if (consumed_bytes > 0 && aacctrl->Samplerate_Out > 0 && samps_per_frame > 0) {
+                                uint32_t cur_bitrate = (uint32_t)((uint64_t)consumed_bytes * 8 * aacctrl->Samplerate_Out / samps_per_frame);
+                                if (aacctrl->bitrate != cur_bitrate) {
+                                    aacctrl->bitrate = cur_bitrate;
+                                }
+                            }
+                        }
+
 						aac_fill_buffer((uint16_t*)music_ctrl.tbuf,aacframeinfo.outputSamps,aacframeinfo.nChans);//填充pcm数据
 					}
 					
@@ -359,9 +407,10 @@ void aac_play_song_task(uint8_t* fname)
 						aac_readptr=aac_buffer; 
 					}
 
-                    // [新增] 更新全局播放时间
+                    // [新增] 更新全局播放时间及实时码率
                     aac_get_curtime(music_ctrl.file, aacctrl);
                     music_info.current_sec = aacctrl->cursec;
+                    music_info.bitrate = aacctrl->bitrate; // 保证UI处能拿取到动态或算好的码率
 				}
 			}
 		}

@@ -4,6 +4,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added `#pragma diag_suppress` directives for Arm Compiler 5 to suppress
+ * warnings #111 (unused parameter), #1207 (fallthrough annotation not
+ * supported), and #188 (unnamed struct/union), which are emitted by armcc
+ * but are benign for this code.
+ * === End MuseCube modification === */
 #include "usbh_core.h"
 #include "usbh_serial.h"
 #include "usbh_pl2303.h"

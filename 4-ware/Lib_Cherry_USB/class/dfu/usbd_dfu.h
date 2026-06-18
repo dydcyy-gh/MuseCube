@@ -3,6 +3,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Updated copyright year range from "2022" to "2022 ~ 2026"
+ * Added function declaration: usbd_dfu_get_state() to query DFU device state
+ * Added function declarations for DFU download/upload lifecycle: usbd_dfu_begin_load(), usbd_dfu_end_load(), usbd_dfu_reset()
+ * Added function declarations for DFU data transfer: usbd_dfu_write(), usbd_dfu_read() with explicit parameter types
+ * Removed original user-implemented callbacks: dfu_read_flash(), dfu_write_flash(), dfu_erase_flash(), dfu_leave()
+ * The project version centralizes flash I/O internally rather than exposing it to user callback functions
+ * === End MuseCube modification === */
 #ifndef USBD_DFU_H
 #define USBD_DFU_H
 

@@ -17,6 +17,7 @@
 #include "lv_port_disp.h"
 #include "file_unit.h"
 #include <string.h>
+#include "avi.h"
 
 void Video_Task( void * pvParameters )
 {
@@ -56,6 +57,18 @@ void Video_Task( void * pvParameters )
             res = video_play_task();
         }
         video_play_deinit();
+    }
+	else if (strcmp((char*)ext, "avi") == 0)
+    {
+        res = video_avi_play_init(chosen_file_path);
+        chosen_file_path_free();
+        while (!res)
+        {
+            if (!g_key_L_M_RT && last_L) break;
+            last_L = g_key_L_M_RT;
+            res = video_avi_play_task();
+        }
+        video_avi_play_deinit();
     }
     else if (strcmp((char*)ext, "bmp") == 0 ||
              strcmp((char*)ext, "jpeg") == 0 ||

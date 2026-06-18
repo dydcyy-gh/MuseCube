@@ -36,7 +36,7 @@
 
 // 不受lvgl管理的页面
 static const Page_Interface_t page_game_interface = { .id = PAGE_GAME };
-static const Page_Interface_t page_video_interface = { .id = PAGE_VIDEO };
+static const Page_Interface_t page_media_interface = { .id = PAGE_MEDIA };
 static const Page_Interface_t page_display_interface = { .id = PAGE_DISPLAY };
 
 // 1. 静态映射表：直接将页面接口指针按 ID 顺序放入数组
@@ -53,7 +53,7 @@ static const Page_Interface_t* const page_registry[PAGE_MAX_ID] = {
     [PAGE_NOTE]       = &page_note_interface,
     [PAGE_FILE]       = &page_file_interface,
     [PAGE_GAME]       = &page_game_interface,
-    [PAGE_VIDEO]      = &page_video_interface,
+    [PAGE_MEDIA]      = &page_media_interface,
 	[PAGE_DISPLAY]    = &page_display_interface,
 	[PAGE_SETTINGS]   = &page_settings_interface,
 	[PAGE_TEXT]       = &page_text_interface,
@@ -96,6 +96,13 @@ uint32_t Page_Get_Current(void)
 {
     return current_page_id;
 }
+
+// 获取即将切换的目标页面ID (新增)
+uint32_t Page_Get_Next(void)
+{
+    return next_page_id;
+}
+
 
 // 初始化
 void Page_Manager_Init(void)

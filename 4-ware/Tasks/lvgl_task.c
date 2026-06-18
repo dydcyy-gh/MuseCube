@@ -10,15 +10,9 @@
 #include "debug.h"
 #include "lvgl.h"
 
-static void lvgl_log_cb(const char *buf)
-{
-    debug_printf("%s", buf);
-}
-
 void Lvgl_Task( void * pvParameters )
 {
 	lv_init();
-	lv_log_register_print_cb(lvgl_log_cb);
 	lv_port_disp_init();
 	lv_port_indev_init();
     Page_Manager_Init();

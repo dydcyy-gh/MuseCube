@@ -193,7 +193,7 @@
  *-----------*/
 
 /*启用日志模块*/
-#define LV_USE_LOG 1
+#define LV_USE_LOG 0
 #if LV_USE_LOG
 
     /*应添加的日志的重要性：
@@ -364,7 +364,6 @@
 		LV_FONT_DECLARE(Font12) 	 \
 		LV_FONT_DECLARE(Font16) 	 \
 		LV_FONT_DECLARE(Font24) 	 \
-		LV_FONT_DECLARE(lv_font_8)   \
 		LV_FONT_DECLARE(lv_font_12)  \
 		LV_FONT_DECLARE(lv_font_16)  \
 		LV_FONT_DECLARE(lv_font_24)  \

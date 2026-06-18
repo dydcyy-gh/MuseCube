@@ -4,6 +4,18 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added `#include "malloc.h"` to use the project's TLSF heap allocator (malloc_bsc/free_bsc)
+ * Added `#pragma diag_suppress 111` to suppress Arm Compiler 5 warning #111 (unreachable code)
+ * Replaced the statically-allocated `g_serial_iobuffer[CONFIG_USBHOST_MAX_SERIAL_CLASS][...]` multi-dimensional array with a pointer array `g_serial_iobuffer[CONFIG_USBHOST_MAX_SERIAL_CLASS] = {NULL}`, allocating each iobuffer dynamically via `malloc_bsc()` in `usbh_serial_alloc()` and freeing via `free_bsc()` in `usbh_serial_free()`
+ * Added dynamic allocation of `rx_rb_pool` via `malloc_bsc()` in `usbh_serial_open()`, with corresponding `free_bsc()` in `usbh_serial_free()`, replacing the statically-embedded ring buffer pool; this ensures the ring buffer memory is freed when the serial device is released
+ * Replaced all uses of custom `usbh_serial_ringbuffer_*` helper functions (init/reset/write/peek/read/get_used) with the project's existing `usb_ringbuffer_*` API (init/reset/write/read/get_used), which provides equivalent ring buffer semantics from the project's utility layer
+ * Removed the entire custom ring buffer implementation block (usbh_serial_ringbuffer_init/reset/get_used/write/peek/read functions) since it is replaced by the project's usb_ringbuffer API
+ * Removed the `cdc_data_class_driver` and `cdc_data_class_info` registration at end of file (the original's `CLASS_INFO_DEFINE` is deleted)
+ * Removed the `USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX` attribute from the static iobuffer declaration since it is now a heap-allocated pointer
+ * All changes adapt the upstream CherryUSB serial class to MuseCube's memory management scheme (TLSF heap instead of static nocache arrays) and existing utility APIs
+ * === End MuseCube modification === */
 #include "usbh_core.h"
 #include "usbh_serial.h"
 #include "malloc.h"
@@ -580,11 +592,16 @@ void usbh_serial_help(void)
                 "\r\n");
 }
 
-static USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_serial_testbuffer[512];
+/* === MuseCube modification ===
+ * Removed static test_buf[512]. Replaced with stack-local buffer
+ * inside usbh_serial() — only used for one-shot CLI test commands.
+ * Saves 512 bytes of static RAM.
+ * === End MuseCube modification === */
 
 int usbh_serial(int argc, char **argv)
 {
     static struct usbh_serial *serial;
+    uint8_t test_buf[512];
     int ret;
 
     if (argc < 3) {
@@ -626,18 +643,18 @@ int usbh_serial(int argc, char **argv)
         usbh_serial_control(serial, USBH_SERIAL_CMD_TIOCMSET, &flags);
         USB_LOG_INFO("Set DTR: %d, RTS: %d\r\n", atoi(argv[3]), atoi(argv[4]));
     } else if (strncmp(argv[2], "-w", 2) == 0 && argc >= 4) {
-        memcpy(g_serial_testbuffer, argv[3], MIN(strlen(argv[3]), sizeof(g_serial_testbuffer)));
-        uint32_t len = snprintf((char *)g_serial_testbuffer, sizeof(g_serial_testbuffer), "%s\r\n", argv[3]);
-        ret = usbh_serial_write(serial, g_serial_testbuffer, len);
+        memcpy(test_buf, argv[3], MIN(strlen(argv[3]), sizeof(test_buf)));
+        uint32_t len = snprintf((char *)test_buf, sizeof(test_buf), "%s\r\n", argv[3]);
+        ret = usbh_serial_write(serial, test_buf, len);
         if (ret >= 0) {
             USB_LOG_INFO("Write %d bytes\r\n", ret);
         } else {
             USB_LOG_ERR("Write failed: %d\r\n", ret);
         }
     } else if (strncmp(argv[2], "-r", 2) == 0) {
-        ret = usbh_serial_read(serial, g_serial_testbuffer, sizeof(g_serial_testbuffer));
+        ret = usbh_serial_read(serial, test_buf, sizeof(test_buf));
         if (ret >= 0) {
-            usb_hexdump(g_serial_testbuffer, ret);
+            usb_hexdump(test_buf, ret);
             USB_LOG_INFO("Read %d bytes\r\n", ret);
         } else {
             USB_LOG_ERR("Read failed: %d\r\n", ret);

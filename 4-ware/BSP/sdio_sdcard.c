@@ -1376,8 +1376,18 @@ uint8_t convert_from_bytes_to_power_of_two(uint16_t NumberOfBytes)
 void SD_DMA_Config(uint32_t*mbuf,uint32_t bufsize,uint32_t dir)
 {		 
 	DMA_InitTypeDef DMA_InitStructure;
-	while (DMA_GetCmdStatus(DMA2_Stream3) != DISABLE){}//等待DMA可配置 
+	uint32_t timeout = 0x3FFFF; // 增加超时计数器
+
+	DMA_Cmd(DMA2_Stream3, DISABLE); 
+
+	while (DMA_GetCmdStatus(DMA2_Stream3) != DISABLE)
+	{
+		timeout--;
+		if(timeout == 0){break;}
+	}
+	
 	DMA_DeInit(DMA2_Stream3);//清空之前该stream3上的所有中断标志
+	
 	DMA_InitStructure.DMA_Channel = DMA_Channel_4;  //通道选择
 	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&SDIO->FIFO;//DMA外设地址
 	DMA_InitStructure.DMA_Memory0BaseAddr = (uint32_t)mbuf;//DMA 存储器0地址

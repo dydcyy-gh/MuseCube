@@ -3,6 +3,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added includes for "variables.h" and "defines.h" to access g_usb_function runtime flag and USBD_UAC1/USBD_UAC2 constants
+ * Replaced all __WEAK stub callbacks with conditional dispatch via g_usb_function: every call to usbd_audio_* is redirected to usbd_audiov1_* or usbd_audiov2_* depending on the currently active USB audio class
+ * Added extern declarations for the 10 UACv1 and 10 UACv2 callback functions (open/close/set_sampling_freq/get_sampling_freq/set_volume/get_volume/set_mute/get_mute/get_sampling_freq_table) that implement the actual device-specific handling
+ * Removed all 10 __WEAK stub function definitions (usbd_audio_set_volume, usbd_audio_get_volume, usbd_audio_set_mute, usbd_audio_get_mute, usbd_audio_set_sampling_freq, usbd_audio_get_sampling_freq, usbd_audio_get_sampling_freq_table, usbd_audio_open, usbd_audio_close) at the end of the file, since the dispatch now routes to concrete implementations instead
+ * Modified audio_notify_handler to dispatch open/close via g_usb_function; modified audio_class_endpoint_request_handler to dispatch set/get sampling_freq; modified audio_class_interface_request_handler to dispatch mute, volume, sampling_freq and sampling_freq_table across both UACv1 and UACv2 code paths
+ * Purpose: allows a single build to support both USB Audio Class 1.0 and 2.0, selected at runtime via g_usb_function rather than at compile time
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_audio.h"
 #include "variables.h"

@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added `#pragma diag_suppress 188` and `#pragma diag_suppress 177` after includes to suppress Arm Compiler 5 warnings (diag 188 = enum constant out of range, diag 177 = variable was declared but never referenced), which are emitted by the FTDI chip name string array when indexing with enum values.
+ * === End MuseCube modification === */
 #include "usbh_core.h"
 #include "usbh_serial.h"
 #include "usbh_ftdi.h"

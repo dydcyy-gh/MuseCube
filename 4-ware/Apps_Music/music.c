@@ -10,6 +10,9 @@
 #include "flac.h"
 #include "ape.h"
 #include "aac.h"
+#include "aiff.h"
+#include "ogg.h"
+
 #include "music.h"
 #include "rng.h"
 #include "es9018k2m.h"
@@ -24,6 +27,8 @@
 #define FORMAT_FLAC 3
 #define FORMAT_AAC  4
 #define FORMAT_APE  5
+#define FORMAT_AIFF 6
+#define FORMAT_OGG  7
 
 #define MUSIC_PATH_PREFIX "0:/MUSIC"
 
@@ -58,6 +63,9 @@ uint8_t get_file_format(char* ext)
     if(strcmp(ext_lower, "flac")== 0) return FORMAT_FLAC;
     if(strcmp(ext_lower, "aac") == 0) return FORMAT_AAC;
     if(strcmp(ext_lower, "ape") == 0) return FORMAT_APE;
+    if(strcmp(ext_lower, "aif") == 0) return FORMAT_AIFF;
+    if(strcmp(ext_lower, "aiff")== 0) return FORMAT_AIFF;
+    if(strcmp(ext_lower, "ogg") == 0) return FORMAT_OGG;
     return 0;
 }
 
@@ -341,6 +349,12 @@ void audio_play_task(void)
 		case FORMAT_APE:
 			ape_play_song_task(pname);
             break;
+		case FORMAT_AIFF:
+			aiff_play_song_task(pname);
+			break;
+		case FORMAT_OGG:
+			ogg_play_song_task(pname);
+			break;
         default:
             break;
     }
@@ -357,4 +371,70 @@ void audio_play_clear(void)
     total_files = 0;
     current_index = 0;
     current_format = 0;
+}
+
+// [新增] 统一的跳转接口 (暴露给 UI 拖动进度条使用)
+void audio_seek(uint32_t target_sec)
+{
+    // 安全保护：如果没有打开文件或者总时间为0，拒绝操作
+    if (music_ctrl.file == NULL || music_info.total_sec == 0) return; 
+    // 边界保护
+    if (target_sec >= music_info.total_sec) {
+        target_sec = music_info.total_sec - 1;
+    }
+    // 根据当前文件格式，路由给对应的底层计算并执行 Seek
+    switch(music_info.file_format) 
+    {
+        case FORMAT_WAV:
+            if (wavctrl.bitrate > 0) {
+                uint32_t target_pos = wavctrl.datastart + target_sec * (wavctrl.bitrate / 8);
+                wav_file_seek(target_pos);
+            }
+            break;
+            
+        case FORMAT_MP3:
+            if (mp3ctrl && mp3ctrl->totsec > 0) {
+                uint32_t data_size = f_size(music_ctrl.file) - mp3ctrl->datastart;
+                uint32_t target_pos = mp3ctrl->datastart + (uint32_t)(((uint64_t)target_sec * data_size) / mp3ctrl->totsec);
+                mp3_file_seek(target_pos);
+            }
+            break;
+            
+        case FORMAT_FLAC:
+            if (flacctrl && flacctrl->totsec > 0) {
+                uint32_t data_size = f_size(music_ctrl.file) - flacctrl->datastart;
+                uint32_t target_pos = flacctrl->datastart + (uint32_t)(((uint64_t)target_sec * data_size) / flacctrl->totsec);
+                flac_file_seek(target_pos);
+            }
+            break;
+            
+        case FORMAT_AAC:
+            if (aacctrl && aacctrl->totsec > 0) {
+                uint32_t data_size = f_size(music_ctrl.file) - aacctrl->datastart;
+                uint32_t target_pos = aacctrl->datastart + (uint32_t)(((uint64_t)target_sec * data_size) / aacctrl->totsec);
+                aac_file_seek(target_pos);
+            }
+            break;
+            
+        case FORMAT_APE:
+            // APE 是帧对齐，直接传目标秒数让底层查表
+            ape_file_seek(target_sec);
+            break;
+
+        case FORMAT_AIFF:
+            // AIFF是原始PCM数据，同WAV按字节偏移计算
+            if (aiffctrl.bitrate > 0) {
+                uint32_t target_pos = aiffctrl.datastart + target_sec * (aiffctrl.bitrate / 8);
+                aiff_file_seek(target_pos);
+            }
+            break;
+        case FORMAT_OGG:
+            ogg_file_seek(target_sec);
+            break;
+        default:
+            break;
+    }
+    
+    // 同步更新显示时间，防止UI在拖动后有短暂的回弹闪烁
+    music_info.current_sec = target_sec;
 }

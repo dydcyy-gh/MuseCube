@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed all USB_LOG_WRN debug logging calls throughout the file (28 instances) to reduce code size and eliminate USB debug output on the embedded device. Each default/unhandled case in request handlers now returns the error code directly without logging.
+ * === End MuseCube modification === */
 #include "usbd_core.h"
 #include "usbd_video.h"
 

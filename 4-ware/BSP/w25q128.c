@@ -28,17 +28,15 @@
 #define SPI3_NSS_Clr() GPIOA->BSRR = (uint32_t)GPIO_Pin_15 << 16;
 #define SPI3_NSS_Set() GPIOA->BSRR = (uint32_t)GPIO_Pin_15;
 
-// 缓冲区大小调整：保持最小RAM占用为512字节
-#define W25QXX_R_BUFF_SIZE  512
-#define W25QXX_T_BUFF_SIZE  512     // TX buffer (512B)
+// DMA dummy byte: TX uses single 0xFF (MINC off), RX uses single trash bin (MINC off)
 #define W25QXX_SECTOR_BUFF_SIZE 512 // 用于分块处理扇区数据 (512B)
 
 // CCM RAM 区域定义 (STM32F405/407 CCM start: 0x10000000, size: 64KB)
 #define IS_CCM_RAM(addr) ((uint32_t)(addr) >= 0x10000000 && (uint32_t)(addr) < 0x10010000)
 
-// 对齐
-__attribute__((aligned(4))) uint8_t SPI3_RX_Buffer[W25QXX_R_BUFF_SIZE];
-__attribute__((aligned(4))) uint8_t SPI3_TX_Buffer[W25QXX_T_BUFF_SIZE];
+// SPI DMA 零内存占用: 利用 DMA 关闭自增(MINC=0)实现单字节 dummy 收发
+static uint8_t spi_dummy_tx = 0xFF;  // TX dummy: always sends 0xFF (read clock)
+static uint8_t spi_dummy_rx;         // RX dummy: receives garbage (write discard)
 __attribute__((aligned(4))) uint8_t W25QXX_BUFFER[W25QXX_SECTOR_BUFF_SIZE];
 
 #define MIN_USE_DMA_SIZE 16
@@ -109,10 +107,7 @@ uint8_t W25QXX_Init(void)
 {
 	xFlashMutex = xSemaphoreCreateMutex();
 	xFlashSemaphore = xSemaphoreCreateCounting(2,0);
-	
-    memset(SPI3_RX_Buffer, 0xFF, W25QXX_R_BUFF_SIZE);
-    memset(SPI3_TX_Buffer, 0xFF, W25QXX_T_BUFF_SIZE);
-    
+
     GPIO_InitTypeDef  GPIO_InitStructure;
     SPI_InitTypeDef  SPI_InitStructure;
     DMA_InitTypeDef DMA_InitStructure;
@@ -288,30 +283,33 @@ void W25QXX_Read_Internal(uint8_t* pBuffer, uint32_t ReadAddr, uint32_t NumByteT
     
     while (bytes_remaining > 0)
     {
-        bytes_to_read = (bytes_remaining > W25QXX_T_BUFF_SIZE) ? W25QXX_T_BUFF_SIZE : bytes_remaining;
-        
+        bytes_to_read = (bytes_remaining > 4096) ? 4096 : bytes_remaining; // chunk to 4KB max
+
         SPI3_NSS_Clr();
         SPI3_ReadWriteByte(W25X_ReadData);
         SPI3_ReadWriteByte((uint8_t)((current_addr)>>16));
         SPI3_ReadWriteByte((uint8_t)((current_addr)>>8));
         SPI3_ReadWriteByte((uint8_t)current_addr);
-        
+
         // 增加对CCM RAM的检查
         if (bytes_to_read > MIN_USE_DMA_SIZE && !IS_CCM_RAM(pBuffer + (NumByteToRead - bytes_remaining)))
         {
-            // 配置DMA - 修改为DMA1
+            // 配置DMA: RX 自增接收数据, TX 不自增持续发送 0xFF
+            DMA1_Stream5->CR &= ~DMA_SxCR_MINC;  // TX: 关闭内存自增，始终读 spi_dummy_tx (0xFF)
+            DMA1_Stream0->CR |= DMA_SxCR_MINC;   // RX: 开启内存自增，接收数据到 pBuffer
+
             DMA1_Stream0->M0AR = (uint32_t)(pBuffer + (NumByteToRead - bytes_remaining));
             DMA1_Stream0->NDTR = bytes_to_read;
-            DMA1_Stream5->M0AR = (uint32_t)SPI3_TX_Buffer;
+            DMA1_Stream5->M0AR = (uint32_t)&spi_dummy_tx;
             DMA1_Stream5->NDTR = bytes_to_read;
-            
+
             // 启动DMA传输
             DMA_Cmd(DMA1_Stream5, ENABLE);
             DMA_Cmd(DMA1_Stream0, ENABLE);
-            
+
             // 使能SPI DMA - 修改为SPI3
             SPI_I2S_DMACmd(SPI3, SPI_I2S_DMAReq_Rx | SPI_I2S_DMAReq_Tx, ENABLE);
-            
+
             // 等待传输完成
             SPI3_DMA_Wait_Complete();
         }
@@ -342,22 +340,25 @@ void W25QXX_Write_Page(uint8_t* pBuffer,uint32_t WriteAddr,uint16_t NumByteToWri
     SPI3_ReadWriteByte((uint8_t)WriteAddr);   
     
     // 使用DMA进行数据传输，增加对CCM RAM的检查
-    if(NumByteToWrite > MIN_USE_DMA_SIZE && !IS_CCM_RAM(pBuffer)) 
+    if(NumByteToWrite > MIN_USE_DMA_SIZE && !IS_CCM_RAM(pBuffer))
     {
-        // 配置DMA
-        DMA1_Stream0->M0AR = (uint32_t)SPI3_RX_Buffer;
+        // 配置DMA: TX 自增发送数据, RX 不自增垃圾全部丢弃到单字节
+        DMA1_Stream5->CR |= DMA_SxCR_MINC;   // TX: 开启内存自增
+        DMA1_Stream0->CR &= ~DMA_SxCR_MINC;  // RX: 关闭内存自增, 垃圾覆写 spi_dummy_rx
+
+        DMA1_Stream0->M0AR = (uint32_t)&spi_dummy_rx;
         DMA1_Stream0->NDTR = NumByteToWrite;
-        
+
         DMA1_Stream5->M0AR = (uint32_t)pBuffer;
         DMA1_Stream5->NDTR = NumByteToWrite;
-        
+
         // 启动DMA传输
         DMA_Cmd(DMA1_Stream5, ENABLE);
         DMA_Cmd(DMA1_Stream0, ENABLE);
-        
+
         // 使能SPI DMA
         SPI_I2S_DMACmd(SPI3, SPI_I2S_DMAReq_Rx | SPI_I2S_DMAReq_Tx, ENABLE);
-        
+
         // 等待传输完成
         SPI3_DMA_Wait_Complete();
     }

@@ -142,16 +142,6 @@ static uint8_t IIC_Wait_Ack(void)
     return 0;    // 接收应答成功
 }
 
-static void IIC_Ack(void)
-{
-    IIC_SCL_L();
-    IIC_SDA_L(); // SDA拉低，发出ACK
-    IIC_Delay();
-    IIC_SCL_H();
-    IIC_Delay();
-    IIC_SCL_L();
-}
-
 static void IIC_NAck(void)
 {
     IIC_SCL_L();

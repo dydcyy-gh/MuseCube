@@ -9,7 +9,7 @@
 #define LCD_W 240
 #define LCD_H 240
 
-//// 更新引脚定义 v9 BLK为C6 RES为B12
+// 更新引脚定义 v9 BLK为C6 RES为B12
 #define LCD_RES_Clr()  GPIOB->BSRR = (uint32_t)GPIO_Pin_12 << 16
 #define LCD_RES_Set()  GPIOB->BSRR = (uint32_t)GPIO_Pin_12
 #define LCD_DC_Clr()   GPIOA->BSRR = (uint32_t)GPIO_Pin_4 << 16

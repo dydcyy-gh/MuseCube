@@ -20,6 +20,20 @@ static lv_obj_t * file_unit_cont = NULL;
 static lv_obj_t * path_label = NULL;
 static lv_obj_t * file_list_cont = NULL;
 
+// =========== 进度弹窗与动态内存状态 ===========
+typedef struct {
+    uint32_t total_bytes;
+    uint32_t cur_bytes;
+    char cur_name[256];
+} file_op_progress_t;
+
+// 仅占用 4 字节指针静态内存，实际内存复用动态堆
+static file_op_progress_t * op_progress = NULL; 
+
+static lv_obj_t * op_win = NULL;
+static lv_obj_t * op_label = NULL;
+static lv_obj_t * op_bar = NULL;
+
 // 盘符监控状态
 static uint8_t last_drive_mask = 0xFF;
 
@@ -55,9 +69,19 @@ static void update_op_buttons(void);
 
 // ================= 底层 FatFs 递归操作引擎 =================
 // 递归删除
-static int do_delete(const char* path) {
+int do_delete(const char* path) {
     FILINFO fno;
     if (f_stat(path, &fno) != FR_OK) return -1;
+    
+    // 动态提取文件名，反馈到堆内存
+    if (op_progress) {
+        const char *basename = strrchr(path, '/');
+        if (!basename) basename = strrchr(path, ':');
+        if (basename) basename++; else basename = path;
+        strncpy(op_progress->cur_name, basename, 255);
+        op_progress->cur_name[255] = '\0';
+    }
+
     if (fno.fattrib & AM_DIR) {
         DIR dir;
         if (f_opendir(&dir, path) == FR_OK) {
@@ -75,9 +99,19 @@ static int do_delete(const char* path) {
 }
 
 // 递归复制
-static int do_copy(const char* src, const char* dst) {
+int do_copy(const char* src, const char* dst) {
     FILINFO fno;
     if (f_stat(src, &fno) != FR_OK) return -1;
+    
+    // 动态提取文件名，反馈到堆内存
+    if (op_progress) {
+        const char *basename = strrchr(src, '/');
+        if (!basename) basename = strrchr(src, ':');
+        if (basename) basename++; else basename = src;
+        strncpy(op_progress->cur_name, basename, 255);
+        op_progress->cur_name[255] = '\0';
+    }
+
     if (fno.fattrib & AM_DIR) {
         f_mkdir(dst); // 创建文件夹，若已存在忽略错误
         DIR dir;
@@ -100,6 +134,13 @@ static int do_copy(const char* src, const char* dst) {
         if (f_open(&fdst, dst, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
             f_close(&fsrc); return -1;
         }
+        
+        // 记录总文件大小，为计算进度做准备
+        if (op_progress) {
+            op_progress->total_bytes = fno.fsize;
+            op_progress->cur_bytes = 0;
+        }
+        
         uint8_t *buf = malloc_bsc(4096); // 分配 4KB 缓冲
         if(buf) {
             UINT br, bw;
@@ -107,6 +148,7 @@ static int do_copy(const char* src, const char* dst) {
                 f_read(&fsrc, buf, 4096, &br);
                 if (br == 0) break;
                 f_write(&fdst, buf, br, &bw);
+                if (op_progress) op_progress->cur_bytes += bw; // 累加当前进度
                 if (bw < br) break;
             }
             free_bsc(buf);
@@ -123,6 +165,12 @@ static void reset_op_state(void) {
     if (op_path) {
         free_bsc(op_path);
         op_path = NULL;
+    }
+    // 清理异步操作路径 (仅在无活跃后台操作时释放)
+    if (!g_file_op_busy) {
+        if (g_async_src) { free_bsc(g_async_src); g_async_src = NULL; }
+        if (g_async_dst) { free_bsc(g_async_dst); g_async_dst = NULL; }
+        if (op_progress) { free_bsc(op_progress); op_progress = NULL; }
     }
 }
 
@@ -143,31 +191,62 @@ static void op_btn_event_cb(lv_event_t * e) {
                 basename = strchr(op_path, ':');
                 if(basename) basename++; else basename = op_path;
             } else basename++;
-            
+
             char target[256] = {0};
             strcpy(target, current_path);
             int len = strlen(target);
             if (len > 0 && target[len-1] != '/' && target[len-1] != ':') strcat(target, "/");
             else if (len > 0 && target[len-1] == ':') strcat(target, "/");
             strcat(target, basename);
-            
+
             if (strncmp(target, op_path, strlen(op_path)) != 0) {
-                do_copy(op_path, target);
+                // 分配内存
+                g_async_src = malloc_bsc(strlen(op_path) + 1);
+                g_async_dst = malloc_bsc(strlen(target) + 1);
+                op_progress = malloc_bsc(sizeof(file_op_progress_t));
+                if (op_progress) memset(op_progress, 0, sizeof(file_op_progress_t));
+
+                if (g_async_src && g_async_dst && op_progress) {
+                    strcpy(g_async_src, op_path);
+                    strcpy(g_async_dst, target);
+                    g_file_op_cmd  = 1;  // 复制
+                    g_file_op_busy = 1;
+                    g_file_op_done = 0;
+                    xTaskNotifyGive(FileOp_Task_handler);
+                } else {
+                    // 分配失败则清理
+                    if (g_async_src) { free_bsc(g_async_src); g_async_src = NULL; }
+                    if (g_async_dst) { free_bsc(g_async_dst); g_async_dst = NULL; }
+                    if (op_progress) { free_bsc(op_progress); op_progress = NULL; }
+                }
             }
-            
             reset_op_state();
-            Update_File(); 
+            Update_File();
         }
     }
     else if (btn == btn_delete) {
         if (op_mode == OP_IDLE) {
-            op_mode = OP_DEL_WAITING; 
+            op_mode = OP_DEL_WAITING;
         } else if (op_mode == OP_DEL_WAITING) {
-            reset_op_state(); 
-        } else if (op_mode == OP_DEL_READY && op_path) {
-            do_delete(op_path); 
             reset_op_state();
-            Update_File(); 
+        } else if (op_mode == OP_DEL_READY && op_path) {
+            // 分配内存
+            g_async_src = malloc_bsc(strlen(op_path) + 1);
+            op_progress = malloc_bsc(sizeof(file_op_progress_t));
+            if (op_progress) memset(op_progress, 0, sizeof(file_op_progress_t));
+
+            if (g_async_src && op_progress) {
+                strcpy(g_async_src, op_path);
+                g_file_op_cmd  = 2;  // 删除
+                g_file_op_busy = 1;
+                g_file_op_done = 0;
+                xTaskNotifyGive(FileOp_Task_handler);
+            } else {
+                if (g_async_src) { free_bsc(g_async_src); g_async_src = NULL; }
+                if (op_progress) { free_bsc(op_progress); op_progress = NULL; }
+            }
+            reset_op_state();
+            Update_File();
         }
     }
     update_op_buttons();
@@ -175,8 +254,7 @@ static void op_btn_event_cb(lv_event_t * e) {
 
 static void update_op_buttons(void) {
     if (!btn_copy || !btn_paste || !btn_delete) return;
-    
-    // 如果在盘符根目录，则隐藏这三个悬浮按钮
+
     if (strcmp(current_path, "") == 0) {
         lv_obj_add_flag(btn_copy, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(btn_paste, LV_OBJ_FLAG_HIDDEN);
@@ -186,6 +264,17 @@ static void update_op_buttons(void) {
         lv_obj_clear_flag(btn_copy, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(btn_paste, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(btn_delete, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (g_file_op_busy) {
+        lv_obj_add_state(btn_copy, LV_STATE_DISABLED);
+        lv_obj_add_state(btn_paste, LV_STATE_DISABLED);
+        lv_obj_add_state(btn_delete, LV_STATE_DISABLED);
+        return;
+    } else {
+        lv_obj_clear_state(btn_copy, LV_STATE_DISABLED);
+        lv_obj_clear_state(btn_paste, LV_STATE_DISABLED);
+        lv_obj_clear_state(btn_delete, LV_STATE_DISABLED);
     }
 
     lv_color_t c_copy, c_paste, c_del;
@@ -322,27 +411,25 @@ static void load_file_list(void)
                 lv_obj_set_pos(item_cont, 0, y_ofs);
                 remove_default_style(item_cont);
                 
-                lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_HOVERED | LV_PART_MAIN);
-                lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xE0E0E0), LV_STATE_HOVERED | LV_PART_MAIN);
-                lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_PRESSED | LV_PART_MAIN);
-                lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xC0C0C0), LV_STATE_PRESSED | LV_PART_MAIN);
-                
                 lv_obj_t * icon = lv_img_create(item_cont);
                 lv_img_set_src(icon, &file_folder_icon); 
                 lv_obj_set_size(icon, 16, 16);
                 lv_obj_align(icon, LV_ALIGN_LEFT_MID, 8, 0);
+                lv_obj_add_flag(icon, LV_OBJ_FLAG_EVENT_BUBBLE); 
                 
                 const char * disk_name = (i == 0) ? "SD卡 (0:)" : ((i == 1) ? "U盘 1 (1:)" : "U盘 2 (2:)");
                 lv_obj_t * name_label = lv_label_create(item_cont);
                 lv_obj_set_style_text_font(name_label, &lv_font_12, 0);
                 lv_label_set_text(name_label, disk_name);
                 lv_obj_align(name_label, LV_ALIGN_TOP_LEFT, 36, 4);
+                lv_obj_add_flag(name_label, LV_OBJ_FLAG_EVENT_BUBBLE);
                 
                 lv_obj_t * bar = lv_bar_create(item_cont);
                 lv_obj_set_size(bar, 190, 6);
                 lv_obj_align(bar, LV_ALIGN_TOP_LEFT, 36, 22);
                 lv_bar_set_range(bar, 0, 100);
                 lv_bar_set_value(bar, used_percent, LV_ANIM_OFF);
+                lv_obj_add_flag(bar, LV_OBJ_FLAG_EVENT_BUBBLE); 
                 
                 char size_str[64];
                 if (tot_MB >= 1024) { 
@@ -358,6 +445,7 @@ static void load_file_list(void)
                 lv_label_set_recolor(size_label, true);
                 lv_label_set_text(size_label, size_str);
                 lv_obj_align(size_label, LV_ALIGN_TOP_LEFT, 36, 32);
+                lv_obj_add_flag(size_label, LV_OBJ_FLAG_EVENT_BUBBLE);
                 
                 lv_obj_add_flag(item_cont, LV_OBJ_FLAG_CLICKABLE);
                 char * folder_name = lv_mem_alloc(strlen(drive_path) + 1);
@@ -383,25 +471,21 @@ static void load_file_list(void)
         lv_obj_set_pos(item_cont, 0, y_ofs);
         remove_default_style(item_cont);
 
-        lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_HOVERED | LV_PART_MAIN);
-        lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xE0E0E0), LV_STATE_HOVERED | LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(item_cont, LV_OPA_COVER, LV_STATE_PRESSED | LV_PART_MAIN);
-        lv_obj_set_style_bg_color(item_cont, lv_color_hex(0xC0C0C0), LV_STATE_PRESSED | LV_PART_MAIN);
-        
         bool is_dir = (fno.fattrib & AM_DIR) ? true : false;
         
         lv_obj_t * icon = lv_img_create(item_cont);
         lv_img_set_src(icon, is_dir ? &file_folder_icon : &file_file_icon);
         lv_obj_set_size(icon, 16, 16);
         lv_obj_align(icon, LV_ALIGN_LEFT_MID, 2, 0);
+        lv_obj_add_flag(icon, LV_OBJ_FLAG_EVENT_BUBBLE);
         
         lv_obj_t * name_label = lv_label_create(item_cont);
         lv_obj_set_style_text_font(name_label, &lv_font_12, 0);
         lv_label_set_text(name_label, fno.fname);
         lv_label_set_long_mode(name_label, LV_LABEL_LONG_CLIP);
-        // 缩小名字显示宽度，防止文字遮挡右侧悬浮按钮
         lv_obj_set_width(name_label, 180);
         lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 20, 0);
+        lv_obj_add_flag(name_label, LV_OBJ_FLAG_EVENT_BUBBLE); 
         
         lv_obj_add_flag(item_cont, LV_OBJ_FLAG_CLICKABLE);
         
@@ -432,8 +516,8 @@ static void Update_File(void)
         lv_label_set_text(path_label, current_path);
     }
     
-    update_op_buttons(); // 在此触发一次按钮的显示/隐藏与颜色刷新
-    
+    update_op_buttons(); 
+
     load_file_list();
 }
 
@@ -446,7 +530,6 @@ static lv_obj_t * create_tool_btn(lv_obj_t * parent, const char * text, int y_of
     lv_obj_set_size(btn, 30, 20);
     lv_obj_align(btn, LV_ALIGN_TOP_RIGHT, -5, y_ofs);
     
-    // 清除边距和阴影，圆角设为0
     lv_obj_set_style_pad_all(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(btn, 0, LV_PART_MAIN); 
@@ -455,7 +538,6 @@ static lv_obj_t * create_tool_btn(lv_obj_t * parent, const char * text, int y_of
     
     lv_obj_t * label = lv_label_create(btn);
     lv_obj_set_style_text_font(label, &lv_font_12, 0);
-    // 强制字体为黑色
     lv_obj_set_style_text_color(label, lv_color_black(), 0); 
     lv_label_set_text(label, text);
     lv_obj_center(label);
@@ -474,7 +556,7 @@ void Create_File_Unit(void)
 
     g_file_chosen = 0;
     last_drive_mask = 0xFF; 
-    reset_op_state(); // 重置状态机与内存
+    reset_op_state(); 
 
     file_unit_cont = lv_obj_create(lv_scr_act());
     lv_obj_set_size(file_unit_cont, 240, 180);
@@ -489,27 +571,28 @@ void Create_File_Unit(void)
     lv_obj_align(header_cont, LV_ALIGN_TOP_MID, 0, 0);
     remove_default_style(header_cont);
     
+    lv_obj_add_flag(header_cont, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(header_cont, back_click_event_cb, LV_EVENT_CLICKED, NULL);
+    
     lv_obj_t * back_btn = lv_img_create(header_cont);
     lv_img_set_src(back_btn, &file_exit_icon);
     lv_obj_set_size(back_btn, 16, 16);
     lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 2, 0);
-    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(back_btn, back_click_event_cb, LV_EVENT_CLICKED, NULL);
     
     path_label = lv_label_create(header_cont);
     lv_obj_set_style_text_font(path_label, &lv_font_12, 0);
     lv_label_set_long_mode(path_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(path_label, 220); 
     lv_obj_align(path_label, LV_ALIGN_LEFT_MID, 20, 0);
+    lv_obj_add_flag(path_label, LV_OBJ_FLAG_EVENT_BUBBLE);
     
     file_list_cont = lv_obj_create(file_unit_cont);
-    lv_obj_set_size(file_list_cont, 240, 160); // 恢复全屏列表高度
+    lv_obj_set_size(file_list_cont, 240, 160);
     lv_obj_align(file_list_cont, LV_ALIGN_TOP_MID, 0, 20);
     remove_default_style(file_list_cont);
     lv_obj_set_scroll_dir(file_list_cont, LV_DIR_VER);
 
     // ============= 右侧悬浮操作按钮 =============
-    // 悬浮在主容器上，y轴偏移避开 header_cont (高度20)
     btn_copy   = create_tool_btn(file_unit_cont, "复制", 25);
     btn_paste  = create_tool_btn(file_unit_cont, "粘贴", 50);
     btn_delete = create_tool_btn(file_unit_cont, "删除", 75);
@@ -523,6 +606,82 @@ void Create_File_Unit(void)
 void Update_File_Unit(void)
 {
     if (file_unit_cont == NULL) return;
+
+    // 检测后台文件操作是否完成
+    static uint8_t was_busy = 0;
+    if (was_busy && !g_file_op_busy) {
+        // 操作刚完成，刷新文件列表并关闭弹窗
+        g_file_op_done = 0;
+        Update_File();
+        if (op_win) {
+            lv_obj_del(op_win);
+            op_win = op_label = op_bar = NULL;
+        }
+        // 释放动态堆分配的进度对象
+        if (op_progress) {
+            free_bsc(op_progress);
+            op_progress = NULL;
+        }
+    }
+    was_busy = g_file_op_busy;
+
+    // ======== 显示进度操作弹窗 ========
+    if (g_file_op_busy && op_progress) {
+        if (op_win == NULL) {
+            op_win = lv_obj_create(file_unit_cont); // 挂载在主容器上
+            lv_obj_set_size(op_win, 180, 80);
+            lv_obj_center(op_win);
+            remove_default_style(op_win);
+            // 手动增加样式: 白色背景, 蓝色边框, 圆角
+            lv_obj_set_style_bg_opa(op_win, LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(op_win, lv_color_white(), 0);
+            lv_obj_set_style_radius(op_win, 8, 0);
+            lv_obj_set_style_border_width(op_win, 2, 0);
+            lv_obj_set_style_border_color(op_win, lv_color_hex(0x2196F3), 0);
+            lv_obj_set_style_pad_all(op_win, 10, 0);
+            lv_obj_clear_flag(op_win, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(op_win, LV_OBJ_FLAG_CLICKABLE); // 防止点击穿透
+
+            lv_obj_t * title = lv_label_create(op_win);
+            lv_obj_set_style_text_font(title, &lv_font_12, 0); 
+            lv_label_set_text(title, (g_file_op_cmd == 1) ? "正在复制..." : "正在删除...");
+            lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+            op_label = lv_label_create(op_win);
+            lv_obj_set_style_text_font(op_label, &lv_font_12, 0);
+            lv_label_set_text(op_label, "准备中...");
+            lv_label_set_long_mode(op_label, LV_LABEL_LONG_CLIP); // 修改为直接截断
+            lv_obj_set_width(op_label, 150);
+            lv_obj_align(op_label, LV_ALIGN_TOP_LEFT, 0, 20);
+
+            op_bar = lv_bar_create(op_win);
+            lv_obj_set_size(op_bar, 150, 10);
+            lv_obj_align(op_bar, LV_ALIGN_TOP_LEFT, 0, 45);
+            lv_bar_set_range(op_bar, 0, 100);
+            lv_bar_set_value(op_bar, 0, LV_ANIM_OFF);
+        } else {
+            // 持续刷新文字状态
+            if (op_progress->cur_name[0] != '\0') {
+                const char * old_text = lv_label_get_text(op_label);
+                // 仅内容变动时才下发更新，减少无用重绘
+                if (strcmp(old_text, op_progress->cur_name) != 0) {
+                    lv_label_set_text(op_label, op_progress->cur_name);
+                }
+            }
+            
+            // 持续刷新进度百分比
+            if (g_file_op_cmd == 1) { // 复制
+                if (op_progress->total_bytes > 0) {
+                    uint32_t pct = (uint32_t)(((unsigned long long)op_progress->cur_bytes * 100) / op_progress->total_bytes);
+                    lv_bar_set_value(op_bar, pct, LV_ANIM_OFF);
+                } else {
+                    lv_bar_set_value(op_bar, 0, LV_ANIM_OFF);
+                }
+            } else { // 删除
+                lv_bar_set_value(op_bar, 100, LV_ANIM_OFF); // 删除无需精确进度条，展示满即可
+            }
+        }
+    }
 
     static uint32_t drive_poll_cnt = 0;
     if (++drive_poll_cnt >= 20) { 
@@ -557,9 +716,10 @@ void Update_File_Unit(void)
                 strcmp((char*)ext, "jpeg")  == 0 ||
                 strcmp((char*)ext, "jpg")   == 0 ||
                 strcmp((char*)ext, "png")   == 0 ||
+				strcmp((char*)ext, "avi")   == 0 ||
                 strcmp((char*)ext, "gif")   == 0) {
                 g_file_chosen = 0;
-                Taskmanager_Ctrl(Task_N_Video, Task_T_Creat, 0);
+                Taskmanager_Ctrl(Task_N_Media, Task_T_Creat, 0);
                 return;
             }
 
@@ -608,12 +768,18 @@ void Remove_File_Unit(void)
         path_label = NULL;
         file_list_cont = NULL;
         btn_copy = btn_paste = btn_delete = NULL;
+        op_win = op_label = op_bar = NULL; // 内存由file_unit_cont的删除自动销毁
     }
     if (current_path) {
         free_bsc(current_path);
         current_path = NULL;
     }
-    reset_op_state(); // 清理残余状态和路径内存
+    // 处理掉动态申请的进度结构体
+    if (op_progress) {
+        free_bsc(op_progress);
+        op_progress = NULL;
+    }
+    reset_op_state(); 
 }
 
 void chosen_file_path_free(void)

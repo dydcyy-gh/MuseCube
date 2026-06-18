@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
  
+
+/* === MuseCube modification ===
+ * Added `#pragma diag_suppress 546`, `#pragma diag_suppress 177`, and `#pragma diag_suppress 550` after the copyright header to suppress Arm Compiler 5 diagnostic warnings 546 (transfer of control flow), 177 (function was declared but never referenced), and 550 (variable was set but never used), which are benign in this context but would otherwise generate noise during Keil MDK builds.
+ * === End MuseCube modification === */
 #pragma diag_suppress 546
 #pragma diag_suppress 177
 #pragma diag_suppress 550

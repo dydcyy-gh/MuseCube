@@ -3,6 +3,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added includes for usb_ringbuffer.h and usb_mempool.h (was only usb_memcpy.h) to support
+ * ring buffer and memory pool-based USB data management.
+ * === End MuseCube modification === */
 #ifndef USBD_CORE_H
 #define USBD_CORE_H
 

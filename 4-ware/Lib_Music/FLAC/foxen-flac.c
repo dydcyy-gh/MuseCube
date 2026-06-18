@@ -2024,3 +2024,23 @@ fx_flac_state_t fx_flac_process(fx_flac_t *inst, const uint8_t *in,
 	return inst->state;
 }
 
+FX_EXPORT void fx_flac_flush(fx_flac_t *inst) {
+	inst = (fx_flac_t *)FX_ALIGN_ADDR(inst);
+
+	/* 彻底清空内部的 Bitstream 缓存，防止跳帧后数据位发生错乱偏移 */
+	fx_bitstream_init(&inst->bitstream);
+
+	/* 强制状态机进入寻找下一个音频帧的模式 */
+	inst->state = FLAC_SEARCH_FRAME;
+	inst->priv_state = FLAC_FRAME_SYNC;
+	
+	/* 将当前处理帧的所有计数器归零 */
+	inst->n_bytes_rem = 0U;
+	inst->crc8 = 0U;
+	inst->coef_cur = 0U;
+	inst->partition_cur = 0U;
+	inst->partition_sample = 0U;
+	inst->rice_unary_counter = 0U;
+	inst->chan_cur = 0U;
+	inst->blk_cur = 0U;
+}

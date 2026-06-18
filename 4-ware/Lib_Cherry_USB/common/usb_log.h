@@ -3,6 +3,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Simplified `usb_dbg_log_line` macro: replaced the multi-line do-while block (which called
+ * _USB_DBG_LOG_HDR, CONFIG_USB_PRINTF, and _USB_DBG_LOG_X_END) with a single
+ * CONFIG_USB_PRINTF call that inlines the tag header and format string directly,
+ * eliminating the need for the _USB_DBG_LOG_HDR and _USB_DBG_LOG_X_END helper macros
+ * (these remain defined for color-enabled builds but are no longer used in the
+ * project's log-line expansion).
+ * === End MuseCube modification === */
 #ifndef USB_LOG_H
 #define USB_LOG_H
 

@@ -13,13 +13,11 @@
 
 // ===== 初始化配置 ===== 
 #define TLSF_CTRL_SIZE   (864)
-#define TLSF_BSC_SIZE    (89 * 1024)
+#define TLSF_BSC_SIZE    (98 * 1024)
 #define TLSF_CCM_SIZE    (64 * 1024 - TLSF_CTRL_SIZE * 2)
 
 //0x10000000 864B (in ccm ram)
 #define BSC_CTRL_ADDR 0x10000000
-//0x2000E000 72kB (in basic ram)
-#define BSC_POOL_ADDR 0x20007000
 //0x10000360 864B (in ccm ram)
 #define CCM_CTRL_ADDR 0x10000360
 //0x100006C0 64KB - 864*2 byte (in ccm ram)
@@ -63,15 +61,24 @@ uint8_t tlsf_init(void)
     return 0;
 }
 
-// ===== BSC (Basic SRAM) 池相关函数 ===== 
+// ===== BSC (Basic SRAM) 池相关函数 =====
+volatile uint32_t g_malloc_fail_size  = 0;
+volatile uint32_t g_realloc_fail_size = 0;
+volatile uint32_t g_realloc_fail_old  = 0;
+
 void *malloc_bsc(uint32_t bytes)
 {
     void *ptr = NULL;
-	
+
 	if(RTOS_OK) xSemaphoreTake(xBSCMutex, portMAX_DELAY);
 	ptr = tlsf_malloc(tlsf_bsc, bytes);
 	if(RTOS_OK) xSemaphoreGive(xBSCMutex);
-	
+
+	// 调试：分配失败时死循环，方便用调试器查看调用栈和请求大小
+	if (ptr == NULL && bytes > 0) {
+		g_malloc_fail_size = bytes;
+		while(1);
+	}
     return ptr;
 }
 
@@ -85,11 +92,17 @@ void free_bsc(void* ptr)
 void *realloc_bsc(void* ptr, uint32_t bytes)
 {
     void *new_ptr = NULL;
-    
+    uint32_t old_size = ptr ? tlsf_block_size(ptr) : 0;
+
     if(RTOS_OK) xSemaphoreTake(xBSCMutex, portMAX_DELAY);
 	new_ptr = tlsf_realloc(tlsf_bsc, ptr, bytes);
 	if(RTOS_OK) xSemaphoreGive(xBSCMutex);
-	
+
+	if (new_ptr == NULL && bytes > 0) {
+		g_realloc_fail_size = bytes;
+		g_realloc_fail_old  = old_size;
+		while(1);
+	}
     return new_ptr;
 }
 

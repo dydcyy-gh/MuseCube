@@ -44,29 +44,16 @@ static filter_int filterbuf256[(256*3 + FILTER_HISTORY_SIZE) * 2]
 #define FILTERBUF32 filterbuf32
 #define FILTERBUF16 filterbuf32
 #else
-//static filter_int filterbuf64[(64*3 + FILTER_HISTORY_SIZE) * 2]   
-//                  IBSS_ATTR_DEMAC MEM_ALIGN_ATTR; 
-//                  /* 2816 or 5632 bytes */
-//static filter_int filterbuf256[(256*3 + FILTER_HISTORY_SIZE) * 2]
-//                  MEM_ALIGN_ATTR; /* 5120 or 10240 bytes */
 
-filter_int *filterbuf64; 	//ÐèÒª2816×Ö½Ú
-filter_int *filterbuf256;	//ÐèÒª5120×Ö½Ú
+filter_int *filterbuf64; 	//éœ€è¦2816å­—èŠ‚
+filter_int *filterbuf256;	//éœ€è¦5120å­—èŠ‚
 
 #define FILTERBUF64 filterbuf64
 #define FILTERBUF32 filterbuf64
 #define FILTERBUF16 filterbuf64
 #endif
 
-
-
-///* This is only needed for "insane" files, and no current Rockbox targets
-//   can hope to decode them in realtime, except the Gigabeat S (at 528MHz). */
-//static filter_int filterbuf1280[(1280*3 + FILTER_HISTORY_SIZE) * 2] 
-//                  IBSS_ATTR_DEMAC_INSANEBUF MEM_ALIGN_ATTR;
-//                  /* 17408 or 34816 bytes */
-
-filter_int *filterbuf1280;	//ÐèÒª17408×Ö½Ú
+filter_int *filterbuf1280;	//éœ€è¦17408å­—èŠ‚
 
 void init_frame_decoder(struct ape_ctx_t* ape_ctx,
                         unsigned char* inbuffer, int* firstbyte,
@@ -83,24 +70,10 @@ void init_frame_decoder(struct ape_ctx_t* ape_ctx,
         case 3000:
             init_filter_64_11(FILTERBUF64);
             break;
-//¸ßÓÚ3000µÄ,ÎÞ·¨ÔÚSTM32F4ÉÏÃæÁ÷³©²¥·Å.
-//        case 4000:
-//            init_filter_256_13(filterbuf256);
-//            init_filter_32_10(FILTERBUF32);
-//            break;
-//        case 5000:
-//            init_filter_1280_15(filterbuf1280);
-//            init_filter_256_13(filterbuf256);
-//            init_filter_16_11(FILTERBUF32);
     }
 }
-//¸ù¾ÝÎÄ¼þÎ»ÖÃ²éÕÒÖ¡ÆðÊ¼µØÖ·
-//fpos:µ±Ç°ÎÄ¼þ¶ÁÈ¡Î»ÖÃ
-//curframe:µ±Ç°Ö¡±àºÅ
-//firstbyte:firstbyte²ÎÊý
-//apex:ape½âÂë²ÎÊý½á¹¹Ìå
-//·µ»ØÖµ:0XFFFFFFFF,ÎÞ·¨¶¨Î»
-//             ÆäËû,¶¨Î»ºóµÄÎÄ¼þÎ»ÖÃ,Ò²¾ÍÊÇÓ¦¸Ã¶ÁÈ¡Êý¾ÝµÄµØ·½
+
+//æ ¹æ®æ–‡ä»¶ä½ç½®æŸ¥æ‰¾å¸§èµ·å§‹åœ°å€
 uint32_t ape_seek_frame(uint32_t fpos,uint32_t*curframe,uint32_t*firstbyte,struct ape_ctx_t *apex)
 {  
 	if((apex->seektablelength/sizeof(uint32_t))!=apex->totalframes)
@@ -116,19 +89,19 @@ uint32_t ape_seek_frame(uint32_t fpos,uint32_t*curframe,uint32_t*firstbyte,struc
 	{
         --*curframe;
     }
-    fpos=apex->seektable[*curframe];//ÐÂµÄframe¿ªÊ¼µØÖ·
+    fpos=apex->seektable[*curframe];//æ–°çš„frameå¼€å§‹åœ°å€
     *firstbyte=3-(fpos&3); 
 	fpos&=~3;
 	return fpos;	
 }
+
 int  decode_chunk(struct ape_ctx_t* ape_ctx,
                                   unsigned char* inbuffer, int* firstbyte,
                                   int* bytesconsumed,
                                   int32_t* decoded0, int32_t* decoded1,
                                   int count)
 {
-    uint16_t left;
-	uint16_t *abuf=(uint16_t*)decoded1;//ÀûÓÃdecode1×÷ÒôÆµÊä³ö»º³å
+	uint16_t *abuf=(uint16_t*)decoded1;//åˆ©ç”¨decode1ä½œéŸ³é¢‘è¾“å‡ºç¼“å†²
 	
     if ((ape_ctx->channels==1) || ((ape_ctx->frameflags
         & (APE_FRAMECODE_PSEUDO_STEREO|APE_FRAMECODE_STEREO_SILENCE))
@@ -151,31 +124,20 @@ int  decode_chunk(struct ape_ctx_t* ape_ctx,
             case 3000:
                 apply_filter_64_11(ape_ctx->fileversion,0,decoded0,count);
                 break;
-    
-//¸ßÓÚ3000µÄ,ÎÞ·¨ÔÚSTM32F4ÉÏÃæÁ÷³©²¥·Å.
-//            case 4000:
-//                apply_filter_32_10(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_256_13(ape_ctx->fileversion,0,decoded0,count);
-//                break;
-//    
-//            case 5000:
-//                apply_filter_16_11(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_256_13(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_1280_15(ape_ctx->fileversion,0,decoded0,count);
         }
 
         /* Now apply the predictor decoding */
         predictor_decode_mono(&ape_ctx->predictor,decoded0,count);
-		//µ¥ÉùµÀÒ²×öÁ¢ÌåÉù´¦Àí
-        //if (ape_ctx->channels==2) 
-		{
-            /* Pseudo-stereo - copy left channel to right channel */
-            while (count--)
-            {
-				*(abuf++)=*decoded0;
-				*(abuf++)=*(decoded0++); 
-            }
-        } 
+        
+		// å•å£°é“åšç«‹ä½“å£°å¤„ç†ï¼šé€†å‘å¾ªçŽ¯ + é¥±å’Œæˆªæ–­é˜²æ­¢æº¢å‡ºçˆ†éŸ³
+        for (int i = count - 1; i >= 0; i--)
+        {
+            int32_t sample = decoded0[i];
+            if (sample > 32767) sample = 32767; else if (sample < -32768) sample = -32768;
+            uint16_t val = (uint16_t)sample;
+            abuf[2 * i]     = val;
+            abuf[2 * i + 1] = val;
+        }
     } else { /* Stereo */
         entropy_decode(ape_ctx, inbuffer, firstbyte, bytesconsumed,
                        decoded0, decoded1, count);
@@ -198,33 +160,30 @@ int  decode_chunk(struct ape_ctx_t* ape_ctx,
                 apply_filter_64_11(ape_ctx->fileversion,0,decoded0,count);
                 apply_filter_64_11(ape_ctx->fileversion,1,decoded1,count);
                 break;
-    
-//¸ßÓÚ3000µÄ,ÎÞ·¨ÔÚSTM32F4ÉÏÃæÁ÷³©²¥·Å.
-//            case 4000:
-//                apply_filter_32_10(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_32_10(ape_ctx->fileversion,1,decoded1,count);
-//                apply_filter_256_13(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_256_13(ape_ctx->fileversion,1,decoded1,count);
-//                break;
-//    
-//            case 5000:
-//                apply_filter_16_11(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_16_11(ape_ctx->fileversion,1,decoded1,count);
-//                apply_filter_256_13(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_256_13(ape_ctx->fileversion,1,decoded1,count);
-//                apply_filter_1280_15(ape_ctx->fileversion,0,decoded0,count);
-//                apply_filter_1280_15(ape_ctx->fileversion,1,decoded1,count);
         }
 
         /* Now apply the predictor decoding */
         predictor_decode_stereo(&ape_ctx->predictor,decoded0,decoded1,count);
 
-        /* Decorrelate and scale to output depth */
-        while (count--)
+        /*
+         * å…³é”®ä¿®å¤ï¼šé€†å‘éåŽ†ä½¿ abuf å†™å…¥ä¸ä¼šè¦†ç›–ä¸‹ä¸€è½®è¦è¯»å–çš„ src1[i-1]
+         * (åœ°å€ä¸é‡å )ï¼Œå› æ­¤åœ¨ ARMCC ä¸Šæ— éœ€ volatileã€‚åŠ å…¥é¥±å’Œæˆªæ–­é˜²æ­¢æº¢å‡ºçˆ†éŸ³ã€‚
+         */
+        int32_t *src0 = decoded0;
+        int32_t *src1 = decoded1;
+        for (int i = count - 1; i >= 0; i--)
         {
-            left = *(decoded1++) - (*decoded0 / 2);
-			*(abuf++)=left;
-            *(abuf++)=left+*(decoded0++); 
+            int32_t d0 = src0[i];
+            int32_t d1 = src1[i];
+
+            int32_t L = d1 - (d0 >> 1);
+            int32_t R = L + d0;
+
+            if (L > 32767) L = 32767; else if (L < -32768) L = -32768;
+            if (R > 32767) R = 32767; else if (R < -32768) R = -32768;
+
+            abuf[2 * i]     = (uint16_t)L;
+            abuf[2 * i + 1] = (uint16_t)R;
         }
     }
     return 0;

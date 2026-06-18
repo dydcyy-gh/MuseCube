@@ -33,6 +33,8 @@ typedef __packed struct
 extern __musicctrl music_ctrl;
 extern __musicinfo music_info;
 
+void audio_seek(uint32_t target_sec);
+
 void play_next_song(void);
 void play_previous_song(void);
 void play_same_song(void);

@@ -38,9 +38,10 @@ extern TaskHandle_t Basic_Task_handler;
 extern TaskHandle_t Lvgl_Task_handler;
 extern TaskHandle_t USB_Task_handler;
 extern TaskHandle_t Music_Task_handler;  
-extern TaskHandle_t Video_Task_handler;
+extern TaskHandle_t Media_Task_handler;
 extern TaskHandle_t Game_Task_handler;
 extern TaskHandle_t Font_Task_handler;
+extern TaskHandle_t FileOp_Task_handler;
 extern TaskHandle_t Start_Task_handler;
 extern TaskHandle_t Task_Manager_handler;
 
@@ -116,8 +117,9 @@ extern volatile uint8_t LVGL_Task_Status;
 extern volatile uint8_t USB_Task_Status;
 extern volatile uint8_t Music_Task_Status;
 extern volatile uint8_t Game_Task_Status;
-extern volatile uint8_t Video_Task_Status;
+extern volatile uint8_t Media_Task_Status;
 extern volatile uint8_t Font_Task_Status;
+extern volatile uint8_t FileOp_Task_Status;
 
 //debug
 extern volatile uint8_t kv_debug_mode;
@@ -140,6 +142,14 @@ extern volatile uint8_t music_bitdepth;
 extern char *current_path;
 extern char *chosen_file_path;
 extern volatile uint8_t g_file_chosen;
+
+//file_op async worker
+extern volatile uint8_t g_file_op_cmd;     // 0=idle, 1=copy, 2=delete
+extern volatile uint8_t g_file_op_busy;    // 1=operation in progress
+extern volatile uint8_t g_file_op_done;    // 1=operation just finished, UI clears after reading
+extern volatile uint8_t g_file_op_result;  // 0=success, nonzero=error
+extern char *g_async_src;                  // source path (allocated by UI, freed by worker)
+extern char *g_async_dst;                  // dest path (allocated by UI, freed by worker)
 
 //flashdb
 extern struct fdb_kvdb kvdb;
@@ -173,5 +183,7 @@ extern volatile int16_t g_usb_joy_R_Y;
 extern volatile int16_t g_usb_mouse_dx;
 extern volatile int16_t g_usb_mouse_dy;
 extern volatile uint8_t g_usb_mouse_btn;
+
+extern volatile uint8_t kv_uac1_enable;
 
 #endif

@@ -3,6 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added `__CC_ARM` to the preprocessor guard selecting the pointer variant of `iso_packet` in `struct usbh_urb`. This ensures the Arm Compiler 5 (`armcc`) used by the Keil MDK build system treats `iso_packet` as a pointer rather than a zero-length array, which `armcc` does not support.
+ * === End MuseCube modification === */
 #ifndef USB_HC_H
 #define USB_HC_H
 

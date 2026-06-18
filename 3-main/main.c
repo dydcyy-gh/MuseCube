@@ -44,6 +44,7 @@ void Start_Task( void * pvParameters )
     fdb_kvdb_control(&kvdb, FDB_KVDB_CTRL_SET_UNLOCK, (void *)fdb_unlock);
     init_res = fdb_kvdb_init(&kvdb, "env", "fdb_kvdb1", NULL, NULL);
     kvdb_persist_load();
+    I2S_Exchange_Ctrl(kv_hdp0_or_spk1);
     ES9018_Set_Config((const ES9018_Config_t *)&kv_es9018_cfg);
 
     // FlashDB TSDB Init
@@ -65,6 +66,7 @@ void Start_Task( void * pvParameters )
 	Taskmanager_Ctrl(Task_N_Music, Task_T_Creat, 0);     //MUSIC task
 	Taskmanager_Ctrl(Task_N_USB, Task_T_Creat, 0);      //usb task
 	Taskmanager_Ctrl(Task_N_Font, Task_T_Creat, 0);     //font task
-	
+	Taskmanager_Ctrl(Task_N_FileOp, Task_T_Creat, 0);   //file operation worker
+
 	vTaskDelete(NULL);   //参数为NULL时，表示删除任务自身
 }

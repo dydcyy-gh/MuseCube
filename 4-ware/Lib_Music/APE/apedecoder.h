@@ -32,9 +32,8 @@ void init_frame_decoder(struct ape_ctx_t* ape_ctx,
                         unsigned char* inbuffer, int* firstbyte,
                         int* bytesconsumed);
 uint32_t ape_seek_frame(uint32_t fpos,uint32_t*curframe,uint32_t*firstbyte,struct ape_ctx_t *apex);
-int decode_chunk(struct ape_ctx_t* ape_ctx,
-                 unsigned char* inbuffer, int* firstbyte,
-                 int* bytesconsumed,
-                 int32_t* decoded0, int32_t* decoded1, 
-                 int count);
+
+int decode_chunk(struct ape_ctx_t* ape_ctx,unsigned char* inbuffer, int* firstbyte,
+                 int* bytesconsumed,int32_t* decoded0, int32_t* decoded1, int count);
 #endif
+

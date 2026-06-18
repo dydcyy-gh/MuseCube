@@ -26,6 +26,7 @@ extern __apectrl * apectrl;
 void ape_fill_buffer(uint16_t* buf,uint16_t size);
 void ape_i2s_dma_tx_callback(void);
 void ape_get_curtime(FIL*fx,__apectrl *apectrl);
+void ape_file_seek(uint32_t target_sec);
 uint8_t ape_play_song_prepare(uint8_t* fname);
 void ape_play_song_task(uint8_t* fname);
 

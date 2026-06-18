@@ -3,6 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Removed `USBD_GAMEPAD_MODE_SWITCH`, `USBD_GAMEPAD_MODE_XBOXONE`, and `USBD_GAMEPAD_MODE_PS4` defines, keeping only `USBD_GAMEPAD_MODE_XINPUT` (value 0)
+ * Removed `usbd_gamepad_switch_init_intf()` declaration and `usbd_gamepad_switch_send_report()` declaration, keeping only the XInput variants
+ * These removals strip Switch, Xbox One, and PS4 gamepad protocol support, leaving the USB gamepad class limited to XInput only, which matches the project's NES emulator use case requiring only a single gamepad mode
+ * === End MuseCube modification === */
 #ifndef USBD_GAMEPAD_H
 #define USBD_GAMEPAD_H
 

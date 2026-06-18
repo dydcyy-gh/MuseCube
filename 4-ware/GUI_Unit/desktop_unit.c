@@ -41,7 +41,7 @@ static void app_icon_event_cb(lv_event_t * e)
 			case 1:  Page_Request_Switch(PAGE_MUSIC);break; //app_music
 			case 2:  Page_Request_Switch(PAGE_USB_CTRL);break; //app_usb
 			case 3:  Page_Request_Switch(PAGE_NOTE);break; //app_note
-			case 4:  Page_Request_Switch(PAGE_FILE, "0:/VIDEO"); break; //app_video
+			case 4:  Page_Request_Switch(PAGE_FILE, "0:/MEDIA"); break; //app_video
 			case 5:  Page_Request_Switch(PAGE_FILE, "0:/GAME"); break;  //app_game
 			case 6:  Page_Request_Switch(PAGE_SETTINGS);break; //app_setting 
 			case 7:  Page_Request_Switch(PAGE_CANVAS);break;
@@ -102,7 +102,7 @@ void Create_Desktop_Unit(void)
         &app_music,        // 1: PAGE_MUSIC
         &app_usb,          // 2: PAGE_USB_CTRL
         &app_note,         // 3: PAGE_NOTE
-        &app_video,        // 4: Task_N_Video
+        &app_video,        // 4: Task_N_Media
         &app_game,         // 5: Task_N_Game
         &app_setting,      // 6: PAGE_SETTINGS
 		&app_drawing,      // 7: app_drawing

@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/* === MuseCube modification ===
+ * Added __PACKED attribute to inner anonymous struct inside all three
+ * audio_v2_control_range1_param_block, audio_v2_control_range2_param_block,
+ * and audio_v2_control_range3_param_block structs, ensuring the subrange
+ * member is tightly packed for correct USB descriptor layout on ARM Cortex-M4F.
+ * === End MuseCube modification === */
 #ifndef USB_AUDIO_H
 #define USB_AUDIO_H
 
