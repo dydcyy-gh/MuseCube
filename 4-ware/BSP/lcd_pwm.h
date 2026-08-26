@@ -3,7 +3,7 @@
 #ifndef __LCD_PWM_H__
 #define __LCD_PWM_H__
 
-void LCD_TIM4_PWM_Init(void);
+void LCD_TIM8_PWM_Init(void);
 void LCD_PWM_DeInit(void);
 
 //duty: 0 - 255 (real can 0-280)

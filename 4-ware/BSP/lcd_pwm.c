@@ -6,7 +6,7 @@
 uint16_t PWM_PSC = 60;     // 预分频值
 uint16_t PWM_ARR = 1400;   // 自动重装载值
 
-void LCD_TIM4_PWM_Init(void)
+void LCD_TIM8_PWM_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct;
     TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;

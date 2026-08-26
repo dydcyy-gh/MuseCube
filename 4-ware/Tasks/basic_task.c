@@ -77,7 +77,7 @@ void Basic_Task( void * pvParameters )
 		//pwm ctrl
 		if(!g_pwm_inited && kv_screen_status)
 		{
-			LCD_TIM4_PWM_Init();
+			LCD_TIM8_PWM_Init();
 			LCD_PWM_SetFreq(10000);
 		}
 		if(g_pwm_inited && !kv_screen_status)
