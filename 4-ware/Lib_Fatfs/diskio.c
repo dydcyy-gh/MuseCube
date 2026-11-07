@@ -46,10 +46,21 @@ DSTATUS disk_initialize (BYTE pdrv)
 DRESULT disk_read (BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
 	u8 res=0; 
+	u8 retry;
 	if (!count) return RES_PARERR;		 	 
 	switch(pdrv)
 	{
-		case SD_CARD:   res = SD_ReadDisk(buff, sector, count); break;
+		case SD_CARD:
+			/* SD 卡读偶尔会失败(FR_DISK_ERR)，导致视频播放卡顿/回绕重播。
+			   失败时重新初始化卡并重试若干次，避免把瞬时错误传给上层。
+			   （原实现没有重试，disk_write 反而有） */
+			res = SD_ReadDisk(buff, sector, count);
+			for (retry = 0; res != 0x00 && retry < 3; retry++)
+			{
+				SD_Init();
+				res = SD_ReadDisk(buff, sector, count);
+			}
+			break;
 		case USB_DISK1: res = USB_disk_read(0, buff, sector, count); break;
 		case USB_DISK2: res = USB_disk_read(1, buff, sector, count); break;
 		default: res=1; 

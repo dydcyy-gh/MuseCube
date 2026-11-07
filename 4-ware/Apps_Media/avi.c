@@ -31,11 +31,18 @@ static uint8_t *workbuf = NULL;
 static int file_opened = 0;         
 static int initialized = 0;
 static uint32_t movi_offset = 0;    
+/* ===== 调试计数器（放在 CCM 尾部 TLSF 池以外的 16 字节，不占 RAM 区）
+   [0] 主循环次数
+   [1] 最近一次 chunk id
+   [2] 最近一次 chunk 起始文件位置
+   [3] 打包状态：bit0-7 f_read 返回值, bit8-15 jd_prepare 返回值,
+       bit16-23 触发保护次数, bit24-31 成功解码帧数(低8位) */
+#define avi_dbg ((volatile uint32_t *)0x1000FFF0)
 
 // --- 视频相关状态 ---
 static uint16_t *line_buf[2] = {NULL, NULL}; 
 static uint8_t write_idx = 0;                
-static uint8_t dma_busy = 0;                 
+static volatile uint8_t dma_busy = 0;                 
 static uint16_t buf_start_y = 0;     
 static uint16_t buf_filled_lines = 0;
 
@@ -89,13 +96,24 @@ static void audio_service(void) {
 // --------------------------- 视频双缓冲与解码回调 ---------------------------
 
 static void wait_video_dma_done(void) {
+    TickType_t t0;
+
+    if (!dma_busy) return;
+
+    t0 = xTaskGetTickCount();
     while (dma_busy) {
-        // 使用短暂超时确保在等待屏幕刷新时绝不饿死音频 DMA
-        if (xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, pdMS_TO_TICKS(2)) != 0) {
+        /* 以 5ms 为一片等待，片间继续喂音频 DMA，避免声音断续 */
+        if (LCD_Wait_DMA_Done(5)) {
             dma_busy = 0;
             break;
         }
-        audio_service(); 
+        audio_service();
+
+        /* 兜底：完成信号即使丢失，最多等 200ms 也必须继续，绝不永久卡死 */
+        if ((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(200)) {
+            dma_busy = 0;
+            break;
+        }
     }
 }
 
@@ -115,8 +133,8 @@ static size_t in_func(JDEC *jd, uint8_t *buff, size_t nbyte) {
 static void flush_line_buffer(void) {
     if (buf_filled_lines == 0) return;
     wait_video_dma_done();
+    dma_busy = 1;   /* 先置忙再启动，避免完成中断早于标志置位的竞态 */
     LCD_Color_Fill(0, buf_start_y, LCD_WIDTH - 1, buf_start_y + buf_filled_lines - 1, line_buf[write_idx]);
-    dma_busy = 1;
     buf_start_y += buf_filled_lines;
     buf_filled_lines = 0;
     write_idx ^= 1;
@@ -240,18 +258,25 @@ err:
 }
 
 uint8_t video_avi_play_task(void) {
+    static uint32_t no_frame_iters = 0;
     if (!initialized) return 1;
 
     while (1) {
         audio_service(); 
         
         uint32_t chunk[2]; UINT br;
-        if (f_read(&fil, chunk, 8, &br) != FR_OK || br != 8) {
+        FRESULT fr;
+        avi_dbg[0]++;
+        fr = f_read(&fil, chunk, 8, &br);
+        avi_dbg[3] = (avi_dbg[3] & ~0xFFu) | ((uint32_t)fr & 0xFF);
+        if (fr != FR_OK || br != 8) {
             if (movi_offset != 0) {
                 f_lseek(&fil, movi_offset);
                 vPortEnterCritical();
                 fifo_wr = 0; fifo_rd = 0; fifo_count = 0; // 清空历史残音
                 vPortExitCritical();
+                /* 保护：连续多次读失败/无画面就退出，让 UI 恢复而不是永久卡死 */
+                if (++no_frame_iters > 2000) { avi_dbg[3] += 0x00010000; no_frame_iters = 0; return 2; }
                 continue; 
             }
             return 2; 
@@ -261,6 +286,8 @@ uint8_t video_avi_play_task(void) {
         uint32_t align_size = (csize + 1) & ~1;
         uint8_t *id = (uint8_t*)&cid;
         uint32_t chunk_start_pos = f_tell(&fil);
+        avi_dbg[1] = cid;
+        avi_dbg[2] = chunk_start_pos;
 
         if (cid == FOURCC('L','I','S','T')) {
             uint32_t list_type;
@@ -273,15 +300,21 @@ uint8_t video_avi_play_task(void) {
 
         if (id[2] == 'd' && id[3] == 'c') {
             JDEC jdec;
+            JRESULT jr;
             jdec.pool = workbuf; jdec.sz_pool = WORKBUF_SIZE;
             
-            if (jd_prepare(&jdec, in_func, workbuf, WORKBUF_SIZE, &fil) == JDR_OK) {
+            jr = jd_prepare(&jdec, in_func, workbuf, WORKBUF_SIZE, &fil);
+            avi_dbg[3] = (avi_dbg[3] & ~0xFF00u) | (((uint32_t)jr & 0xFF) << 8);
+            if (jr == JDR_OK) {
+                avi_dbg[3] += 0x01000000;
+                no_frame_iters = 0;
                 buf_start_y = 0; buf_filled_lines = 0;
                 jd_decomp(&jdec, out_func, 0);
                 if (buf_filled_lines > 0) flush_line_buffer();
                 wait_video_dma_done();
             }
             
+            avi_dbg[3] += 0x00000100;   /* 记录一次 f_lseek 调用（调试） */
             f_lseek(&fil, chunk_start_pos + align_size);
             return 0; // 成功解析一帧画面，让出控制权响应按键
         }

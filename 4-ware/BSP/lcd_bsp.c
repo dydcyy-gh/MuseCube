@@ -239,6 +239,42 @@ void LCD_Color_Fill(uint16_t xsta, uint16_t ysta, uint16_t xend, uint16_t yend, 
 
 extern void LCD_DMA_TransferComplete(void);
 
+/* ------------------------------------------------------------------
+ * 等待 LCD SPI-DMA 传输结束（新增）
+ *
+ * 旧代码的等待方一律阻塞在 xEventGroupWaitBits() 上，而中断里是用
+ * xEventGroupSetBitsFromISR() 置位的 —— 该 API 会把置位请求投递到
+ * FreeRTOS 定时器守护任务队列（configTIMER_QUEUE_LENGTH 原为 5），
+ * 队列满时返回 pdFAIL，置位被静默丢弃，等待方就永久阻塞：
+ * 表现就是播放视频时画面卡死但声音还在继续（v1.3 的已知问题）。
+ *
+ * 这里直接查询硬件真相：传输结束的 ISR 会 DISABLE 掉 DMA stream，
+ * 并且 SPI 会回到空闲。即使软件信号丢失，也最多等 timeout_ms。
+ * ------------------------------------------------------------------ */
+uint8_t LCD_Wait_DMA_Done(uint32_t timeout_ms)
+{
+    TickType_t t0 = xTaskGetTickCount();
+
+    for (;;)
+    {
+        /* 硬件状态：DMA 流已关闭且 SPI 不忙 => 传输真的结束了 */
+        if (((DMA2_Stream5->CR & DMA_SxCR_EN) == 0) &&
+            (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == RESET))
+        {
+            return 1;
+        }
+
+        /* 正常路径：按事件位阻塞等待，几乎零延迟。
+           事件位若丢失，本次超时后回到上面重新查硬件状态。 */
+        xEventGroupWaitBits(xLcdEventGroup, LCD_USER_MDIA, pdTRUE, pdFALSE, pdMS_TO_TICKS(2));
+
+        if ((xTaskGetTickCount() - t0) > pdMS_TO_TICKS(timeout_ms))
+        {
+            return 0;   /* 超时返回，调用方继续，绝不永久卡死 */
+        }
+    }
+}
+
 //中断
 void DMA2_Stream5_IRQHandler(void)
 {
