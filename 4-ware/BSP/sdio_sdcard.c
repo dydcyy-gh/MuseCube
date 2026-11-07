@@ -61,8 +61,9 @@ void SDIO_Register_Deinit()
 // 返回值:错误代码;(0,无错误)
 SD_Error SD_Init(void)
 {
-    xSDcardMutex = xSemaphoreCreateMutex();
-    xSDcardSemaphore = xSemaphoreCreateCounting(2,0);
+    /* 只在句柄不存在时创建，避免读错误重试时反复 SD_Init() 造成信号量/互斥量泄漏 */
+    if (xSDcardMutex == NULL)     xSDcardMutex = xSemaphoreCreateMutex();
+    if (xSDcardSemaphore == NULL) xSDcardSemaphore = xSemaphoreCreateCounting(2,0);
     
     GPIO_InitTypeDef  GPIO_InitStructure;
     SD_Error errorstatus = SD_OK;
@@ -106,7 +107,7 @@ SD_Error SD_Init(void)
         if(SDCardInfo.CardType==SDIO_STD_CAPACITY_SD_CARD_V1_1||SDCardInfo.CardType==SDIO_STD_CAPACITY_SD_CARD_V2_0)
         {
             clkdiv=SDIO_TRANSFER_CLK_DIV+2;  // V1.1/V2.0卡，设置最高48/4=12Mhz
-        }else clkdiv=SDIO_TRANSFER_CLK_DIV;  // SDHC等其他卡，设置最高48/2=24Mhz
+        }else clkdiv=SDIO_TRANSFER_CLK_DIV+2;  // SDHC：降为 48/4=12MHz。24MHz 在本板/部分卡上会偶发读失败(FR_DISK_ERR)，视频播放表现为卡顿/回绕；12MHz 带宽仍有约 6MB/s，远高于播放需求
         SDIO_Clock_Set(clkdiv);
     }
     

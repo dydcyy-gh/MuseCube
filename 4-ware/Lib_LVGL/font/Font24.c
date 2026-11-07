@@ -73,6 +73,10 @@ static bool __user_font_get_glyph_dsc(const lv_font_t * font, lv_font_glyph_dsc_
         dsc_out->ofs_x = gdsc->ofs_x;
         dsc_out->ofs_y = gdsc->ofs_y;
         dsc_out->bpp   = __g_xbf_hd.bpp;
+        /* MUST clear: this bitfield keeps stack garbage if unset. lv_font.c only sets
+           resolved_font when (found && !is_placeholder); garbage==1 leaves resolved_font
+           NULL while returning true -> lv_font_get_glyph_bitmap(NULL) assert spin (random UI freeze). */
+        dsc_out->is_placeholder = false;
         return true;
     }
     return false;

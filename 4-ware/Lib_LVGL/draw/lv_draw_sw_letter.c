@@ -123,6 +123,11 @@ void lv_draw_sw_letter(lv_draw_ctx_t * draw_ctx, const lv_draw_label_dsc_t * dsc
         return;
     }
 
+    /* 防御：字体解析异常时 resolved_font 可能为 NULL（见 Font*.c 的 is_placeholder 修复），
+       直接调用 lv_font_get_glyph_bitmap(NULL,...) 会进入 LV_ASSERT_NULL 的无限自旋，
+       表现为屏幕永久卡死而其他任务仍在运行。这里提前返回。 */
+    if(g.resolved_font == NULL) return;
+
     const uint8_t * map_p = lv_font_get_glyph_bitmap(g.resolved_font, letter);
     if(map_p == NULL) {
         LV_LOG_WARN("lv_draw_letter: character's bitmap not found");

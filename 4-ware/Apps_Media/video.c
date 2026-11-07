@@ -80,7 +80,7 @@ uint8_t video_play_task(void)
     int next_block_idx;
 
     if (!initialized) return 1;
-    xEventGroupWaitBits(xLcdEventGroup,LCD_USER_MDIA,pdTRUE,pdFALSE,portMAX_DELAY);
+    LCD_Wait_DMA_Done(500);
 	
     if (block_idx == BLOCKS_PER_FRAME - 1) 
     {
